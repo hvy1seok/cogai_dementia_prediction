@@ -52,7 +52,7 @@ def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_dir,
         filename="siglip2-dementia-{epoch:02d}",
-        save_top_k=training_config.save_total_limit,
+        save_top_k=-1,  # 모든 에포크 저장
         save_last=True,
         verbose=True,
         every_n_epochs=1  # 매 에포크마다 저장
