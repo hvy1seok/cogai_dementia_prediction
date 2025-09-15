@@ -173,6 +173,15 @@ class DementiaDataset(Dataset):
             if isinstance(inputs[key], torch.Tensor):
                 inputs[key] = inputs[key].squeeze(0)
         
+        # SigLIP2는 attention_mask가 없을 수 있으므로 생성
+        if 'attention_mask' not in inputs and 'input_ids' in inputs:
+            inputs['attention_mask'] = torch.ones_like(inputs['input_ids'])
+        
+        # 디버깅: 첫 번째 아이템에서 키 확인
+        if not hasattr(self, '_debug_printed'):
+            print(f"🔍 SigLIP2 프로세서 출력 키들: {list(inputs.keys())}")
+            self._debug_printed = True
+        
         # 라벨 추가
         inputs['labels'] = torch.tensor(item['label'], dtype=torch.long)
         inputs['language'] = item['language']

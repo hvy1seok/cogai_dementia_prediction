@@ -77,14 +77,17 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         self.val_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
         self.test_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
         
-    def forward(self, input_ids, attention_mask, pixel_values, language_ids=None):
+    def forward(self, input_ids, attention_mask=None, pixel_values=None, language_ids=None):
         """순전파 - SigLIP2 네이티브 다국어 지원"""
-        # SigLIP2 모델 통과
-        outputs = self.siglip(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            pixel_values=pixel_values
-        )
+        # SigLIP2 모델 통과 (attention_mask는 선택적)
+        model_inputs = {
+            'input_ids': input_ids,
+            'pixel_values': pixel_values
+        }
+        if attention_mask is not None:
+            model_inputs['attention_mask'] = attention_mask
+            
+        outputs = self.siglip(**model_inputs)
         
         # SigLIP2의 멀티모달 특징 추출
         if hasattr(outputs, 'logits_per_image'):
@@ -117,7 +120,7 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         # 순전파
         logits = self(
             input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
+            attention_mask=batch.get('attention_mask'),
             pixel_values=batch['pixel_values'],
             language_ids=language_ids
         )
@@ -142,7 +145,7 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         # 순전파
         logits = self(
             input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
+            attention_mask=batch.get('attention_mask'),
             pixel_values=batch['pixel_values'],
             language_ids=language_ids
         )
@@ -174,7 +177,7 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         # 순전파
         logits = self(
             input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
+            attention_mask=batch.get('attention_mask'),
             pixel_values=batch['pixel_values'],
             language_ids=language_ids
         )
