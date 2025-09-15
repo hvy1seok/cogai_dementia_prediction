@@ -108,19 +108,27 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         
         # 선택적 언어별 fine-tuning (크기 맞춤)
         if self.language_embedding is not None and language_ids is not None:
-            lang_emb = self.language_embedding(language_ids)  # [batch_size, 512]
-            
-            # 언어 임베딩 크기를 multimodal_embeddings에 맞춤
-            if multimodal_embeddings.shape[-1] != 768:
-                # 동적으로 projection layer 크기 조정
-                if not hasattr(self, 'language_projection_adjusted'):
-                    self.language_projection = nn.Linear(512, multimodal_embeddings.shape[-1]).to(multimodal_embeddings.device)
-                    self.language_projection_adjusted = True
-            
-            lang_emb = self.language_projection(lang_emb)  # [batch_size, actual_hidden_size]
-            
-            # 언어별 특징 추가 (작은 가중치로)
-            multimodal_embeddings = multimodal_embeddings + lang_emb * 0.1
+            try:
+                lang_emb = self.language_embedding(language_ids)  # [batch_size, 512]
+                
+                # 언어 임베딩 크기를 multimodal_embeddings에 맞춤
+                if multimodal_embeddings.shape[-1] != 768:
+                    # 동적으로 projection layer 크기 조정
+                    if not hasattr(self, 'language_projection_adjusted'):
+                        self.language_projection = nn.Linear(512, multimodal_embeddings.shape[-1]).to(multimodal_embeddings.device)
+                        self.language_projection_adjusted = True
+                
+                lang_emb = self.language_projection(lang_emb)  # [batch_size, actual_hidden_size]
+                
+                # 크기 확인 후 언어별 특징 추가
+                if multimodal_embeddings.shape == lang_emb.shape:
+                    multimodal_embeddings = multimodal_embeddings + lang_emb * 0.1
+                else:
+                    # 크기가 맞지 않으면 언어 임베딩 스킵
+                    print(f"⚠️ 언어 임베딩 크기 불일치: {multimodal_embeddings.shape} vs {lang_emb.shape} - 스킵")
+            except Exception as e:
+                print(f"⚠️ 언어 임베딩 처리 중 오류: {e} - 스킵")
+                pass  # 언어 임베딩 없이 계속 진행
         
         # 분류
         logits = self.classifier(multimodal_embeddings)
