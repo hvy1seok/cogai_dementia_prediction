@@ -77,15 +77,19 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         self.val_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
         self.test_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
         
-    def forward(self, input_ids, attention_mask=None, pixel_values=None, language_ids=None):
+    def forward(self, input_ids, attention_mask=None, pixel_values=None, pixel_attention_mask=None, spatial_shapes=None, language_ids=None):
         """순전파 - SigLIP2 네이티브 다국어 지원"""
-        # SigLIP2 모델 통과 (attention_mask는 선택적)
+        # SigLIP2 모델 통과 (모든 필요한 입력 포함)
         model_inputs = {
             'input_ids': input_ids,
             'pixel_values': pixel_values
         }
         if attention_mask is not None:
             model_inputs['attention_mask'] = attention_mask
+        if pixel_attention_mask is not None:
+            model_inputs['pixel_attention_mask'] = pixel_attention_mask
+        if spatial_shapes is not None:
+            model_inputs['spatial_shapes'] = spatial_shapes
             
         outputs = self.siglip(**model_inputs)
         
@@ -121,12 +125,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         input_ids = batch['input_ids']
         pixel_values = batch['pixel_values']
         attention_mask = batch.get('attention_mask', None)
+        pixel_attention_mask = batch.get('pixel_attention_mask', None)
+        spatial_shapes = batch.get('spatial_shapes', None)
         
         # 순전파
         logits = self(
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
+            pixel_attention_mask=pixel_attention_mask,
+            spatial_shapes=spatial_shapes,
             language_ids=language_ids
         )
         
@@ -151,12 +159,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         input_ids = batch['input_ids']
         pixel_values = batch['pixel_values']
         attention_mask = batch.get('attention_mask', None)
+        pixel_attention_mask = batch.get('pixel_attention_mask', None)
+        spatial_shapes = batch.get('spatial_shapes', None)
         
         # 순전파
         logits = self(
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
+            pixel_attention_mask=pixel_attention_mask,
+            spatial_shapes=spatial_shapes,
             language_ids=language_ids
         )
         
@@ -188,12 +200,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         input_ids = batch['input_ids']
         pixel_values = batch['pixel_values']
         attention_mask = batch.get('attention_mask', None)
+        pixel_attention_mask = batch.get('pixel_attention_mask', None)
+        spatial_shapes = batch.get('spatial_shapes', None)
         
         # 순전파
         logits = self(
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
+            pixel_attention_mask=pixel_attention_mask,
+            spatial_shapes=spatial_shapes,
             language_ids=language_ids
         )
         
