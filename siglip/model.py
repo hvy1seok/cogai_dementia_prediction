@@ -117,11 +117,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         # 언어 ID 변환
         language_ids = self._get_language_ids(batch['language'])
         
+        # 안전한 입력 준비
+        input_ids = batch['input_ids']
+        pixel_values = batch['pixel_values']
+        attention_mask = batch.get('attention_mask', None)
+        
         # 순전파
         logits = self(
-            input_ids=batch['input_ids'],
-            attention_mask=batch.get('attention_mask'),
-            pixel_values=batch['pixel_values'],
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            pixel_values=pixel_values,
             language_ids=language_ids
         )
         
@@ -142,11 +147,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         # 언어 ID 변환
         language_ids = self._get_language_ids(batch['language'])
         
+        # 안전한 입력 준비
+        input_ids = batch['input_ids']
+        pixel_values = batch['pixel_values']
+        attention_mask = batch.get('attention_mask', None)
+        
         # 순전파
         logits = self(
-            input_ids=batch['input_ids'],
-            attention_mask=batch.get('attention_mask'),
-            pixel_values=batch['pixel_values'],
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            pixel_values=pixel_values,
             language_ids=language_ids
         )
         
@@ -174,11 +184,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         # 언어 ID 변환
         language_ids = self._get_language_ids(batch['language'])
         
+        # 안전한 입력 준비
+        input_ids = batch['input_ids']
+        pixel_values = batch['pixel_values']
+        attention_mask = batch.get('attention_mask', None)
+        
         # 순전파
         logits = self(
-            input_ids=batch['input_ids'],
-            attention_mask=batch.get('attention_mask'),
-            pixel_values=batch['pixel_values'],
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            pixel_values=pixel_values,
             language_ids=language_ids
         )
         

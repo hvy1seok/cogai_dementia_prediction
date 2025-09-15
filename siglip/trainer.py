@@ -48,27 +48,18 @@ def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
     """콜백 생성"""
     callbacks = []
     
-    # 모델 체크포인트
+    # 모델 체크포인트 (에포크 기반)
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_dir,
-        filename="siglip2-dementia-{epoch:02d}-{val_f1:.3f}",
-        monitor="val_f1",
-        mode="max",
+        filename="siglip2-dementia-{epoch:02d}",
         save_top_k=training_config.save_total_limit,
         save_last=True,
-        verbose=True
+        verbose=True,
+        every_n_epochs=1  # 매 에포크마다 저장
     )
     callbacks.append(checkpoint_callback)
     
-    # 조기 종료
-    early_stopping = EarlyStopping(
-        monitor="val_f1",
-        mode="max",
-        patience=training_config.early_stopping_patience,
-        min_delta=training_config.early_stopping_threshold,
-        verbose=True
-    )
-    callbacks.append(early_stopping)
+    # 조기 종료 비활성화 (validation 없으므로 제거)
     
     # 학습률 모니터링
     lr_monitor = LearningRateMonitor(logging_interval="step")
@@ -96,17 +87,15 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     
     # 데이터로더 생성
     print("데이터로더 생성 중...")
-    train_loader, val_loader, test_loader = create_dataloaders(
+    train_loader, test_loader = create_dataloaders(
         data_dir=config.data_dir,
         processor=processor,
         config=config,
-        train_split=config.train_split,
-        val_split=config.val_split,
-        test_split=config.test_split
+        train_split=0.8,
+        test_split=0.2
     )
     
     print(f"훈련 데이터: {len(train_loader.dataset)} 샘플")
-    print(f"검증 데이터: {len(val_loader.dataset)} 샘플")
     print(f"테스트 데이터: {len(test_loader.dataset)} 샘플")
     
     # 모델 생성
@@ -132,7 +121,7 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
         "gradient_clip_val": training_config.max_grad_norm,
         "accumulate_grad_batches": training_config.gradient_accumulation_steps,
         "log_every_n_steps": training_config.logging_steps,
-        "val_check_interval": 0.5,  # 에포크 중간에 검증
+        "check_val_every_n_epoch": None,  # validation 비활성화
         "enable_progress_bar": True,
         "enable_model_summary": True,
     }
@@ -145,17 +134,13 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     # 훈련기 생성
     trainer = pl.Trainer(**trainer_kwargs)
     
-    # 훈련 시작
+    # 훈련 시작 (validation 없이)
     print("훈련 시작...")
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model, train_loader)
     
-    # 최고 모델로 테스트
+    # 훈련 완료 후 테스트
     print("테스트 실행...")
-    best_model_path = trainer.checkpoint_callback.best_model_path
-    if best_model_path:
-        print(f"최고 모델 로드: {best_model_path}")
-        model = model.load_from_checkpoint(best_model_path)
-        trainer.test(model, test_loader)
+    trainer.test(model, test_loader)
     
     # wandb 종료
     wandb.finish()

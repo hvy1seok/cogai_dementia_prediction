@@ -180,6 +180,12 @@ class DementiaDataset(Dataset):
         # 디버깅: 첫 번째 아이템에서 키 확인
         if not hasattr(self, '_debug_printed'):
             print(f"🔍 SigLIP2 프로세서 출력 키들: {list(inputs.keys())}")
+            print(f"🔍 각 키의 타입과 크기:")
+            for k, v in inputs.items():
+                if isinstance(v, torch.Tensor):
+                    print(f"  {k}: {v.shape} ({v.dtype})")
+                else:
+                    print(f"  {k}: {type(v)} - {v}")
             self._debug_printed = True
         
         # 라벨 추가
@@ -192,8 +198,7 @@ def create_dataloaders(data_dir: str,
                       processor: AutoProcessor,  # SigLIP2 지원
                       config,
                       train_split: float = 0.8,
-                      val_split: float = 0.1,
-                      test_split: float = 0.1) -> Tuple[DataLoader, DataLoader, DataLoader]:
+                      test_split: float = 0.2) -> Tuple[DataLoader, DataLoader]:
     """데이터로더 생성"""
     
     audio_processor = AudioToMelSpectrogram(
@@ -215,14 +220,13 @@ def create_dataloaders(data_dir: str,
         languages=config.languages
     )
     
-    # 데이터 분할
+    # 데이터 분할 (Train:Test = 8:2)
     total_size = len(full_dataset)
     train_size = int(train_split * total_size)
-    val_size = int(val_split * total_size)
-    test_size = total_size - train_size - val_size
+    test_size = total_size - train_size
     
-    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
-        full_dataset, [train_size, val_size, test_size],
+    train_dataset, test_dataset = torch.utils.data.random_split(
+        full_dataset, [train_size, test_size],
         generator=torch.Generator().manual_seed(config.random_seed)
     )
     
@@ -235,14 +239,6 @@ def create_dataloaders(data_dir: str,
         pin_memory=True
     )
     
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True
-    )
-    
     test_loader = DataLoader(
         test_dataset,
         batch_size=config.batch_size,
@@ -251,4 +247,9 @@ def create_dataloaders(data_dir: str,
         pin_memory=True
     )
     
-    return train_loader, val_loader, test_loader 
+    print(f"📊 데이터 분할 완료:")
+    print(f"  훈련 데이터: {len(train_dataset)} 샘플 ({train_split*100:.0f}%)")
+    print(f"  테스트 데이터: {len(test_dataset)} 샘플 ({test_split*100:.0f}%)")
+    print(f"  전체 데이터: {total_size} 샘플")
+    
+    return train_loader, test_loader 
