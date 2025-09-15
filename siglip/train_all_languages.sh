@@ -10,7 +10,7 @@ OUTPUT_DIR="../modules/outputs/siglip/All_Languages"
 MODEL_NAME="google/siglip2-base-patch16-naflex"
 BATCH_SIZE=8
 LEARNING_RATE=2e-5
-NUM_EPOCHS=10
+NUM_EPOCHS=100
 LANGUAGES="English Greek Spanish Mandarin"
 
 # 출력 디렉토리 생성

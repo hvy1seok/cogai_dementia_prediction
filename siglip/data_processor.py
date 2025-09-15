@@ -12,7 +12,9 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
 from transformers import AutoProcessor  # SigLIP2 지원
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
+from sklearn.model_selection import train_test_split
+from collections import Counter
 import soundfile as sf
 from language_parsers import parse_all_languages, get_language_parser
 
@@ -185,6 +187,66 @@ class DementiaDataset(Dataset):
         
         return inputs
 
+def create_stratified_split(dataset, train_split: float = 0.8, random_seed: int = 42):
+    """
+    언어별 + 라벨별 비율을 유지하면서 stratified split 수행
+    """
+    # 데이터에서 언어와 라벨 정보 추출
+    languages = []
+    labels = []
+    
+    for i in range(len(dataset)):
+        item = dataset.data[i]  # DementiaDataset의 data 속성 접근
+        languages.append(item['language'])
+        labels.append(item['label'])
+    
+    # 언어-라벨 조합으로 stratify 키 생성
+    stratify_keys = [f"{lang}_{label}" for lang, label in zip(languages, labels)]
+    
+    # 전체 인덱스 생성
+    indices = list(range(len(dataset)))
+    
+    # Stratified split 수행
+    train_indices, test_indices = train_test_split(
+        indices,
+        test_size=1-train_split,
+        stratify=stratify_keys,
+        random_state=random_seed
+    )
+    
+    # 분할 결과 통계 출력
+    print(f"\n📊 Stratified Split 결과:")
+    print(f"  전체 데이터: {len(dataset)} 샘플")
+    print(f"  훈련 데이터: {len(train_indices)} 샘플 ({len(train_indices)/len(dataset)*100:.1f}%)")
+    print(f"  테스트 데이터: {len(test_indices)} 샘플 ({len(test_indices)/len(dataset)*100:.1f}%)")
+    
+    # 훈련/테스트 세트의 언어별 분포 확인
+    train_lang_dist = Counter([languages[i] for i in train_indices])
+    test_lang_dist = Counter([languages[i] for i in test_indices])
+    train_label_dist = Counter([labels[i] for i in train_indices])
+    test_label_dist = Counter([labels[i] for i in test_indices])
+    
+    print(f"\n📊 언어별 분포:")
+    for lang in set(languages):
+        train_count = train_lang_dist[lang]
+        test_count = test_lang_dist[lang]
+        total_count = train_count + test_count
+        if total_count > 0:
+            print(f"  {lang}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
+                  f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
+    
+    print(f"\n📊 라벨별 분포:")
+    label_names = {0: '정상', 1: '치매'}
+    for label in [0, 1]:
+        train_count = train_label_dist[label]
+        test_count = test_label_dist[label]
+        total_count = train_count + test_count
+        if total_count > 0:
+            print(f"  {label_names[label]}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
+                  f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
+    
+    return train_indices, test_indices
+
 def create_dataloaders(data_dir: str,
                       processor: AutoProcessor,  # SigLIP2 지원
                       config,
@@ -211,15 +273,17 @@ def create_dataloaders(data_dir: str,
         languages=config.languages
     )
     
-    # 데이터 분할 (Train:Test = 8:2)
-    total_size = len(full_dataset)
-    train_size = int(train_split * total_size)
-    test_size = total_size - train_size
-    
-    train_dataset, test_dataset = torch.utils.data.random_split(
-        full_dataset, [train_size, test_size],
-        generator=torch.Generator().manual_seed(config.random_seed)
+    # Stratified 데이터 분할 (언어별 + 라벨별 비율 유지)
+    print("🎯 Stratified Split 수행 중...")
+    train_indices, test_indices = create_stratified_split(
+        full_dataset, 
+        train_split=train_split,
+        random_seed=config.random_seed
     )
+    
+    # Subset으로 데이터셋 분할
+    train_dataset = Subset(full_dataset, train_indices)
+    test_dataset = Subset(full_dataset, test_indices)
     
     # 데이터로더 생성
     train_loader = DataLoader(
