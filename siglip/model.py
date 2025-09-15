@@ -81,37 +81,36 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             
         outputs = self.siglip(**model_inputs)
         
-        # SigLIP2의 멀티모달 특징 추출
-        if hasattr(outputs, 'logits_per_image'):
-            multimodal_embeddings = outputs.logits_per_image  # [batch_size, projection_dim]
-        elif hasattr(outputs, 'image_embeds') and hasattr(outputs, 'text_embeds'):
-            # 이미지와 텍스트 임베딩 결합
+        # SigLIP2의 멀티모달 특징 추출 (고정 차원 사용)
+        if hasattr(outputs, 'image_embeds') and hasattr(outputs, 'text_embeds'):
+            # 이미지와 텍스트 임베딩 결합 (고정 차원!)
             multimodal_embeddings = (outputs.image_embeds + outputs.text_embeds) / 2
+            print(f"🔧 고정 차원 임베딩 사용: {multimodal_embeddings.shape}")
+        elif hasattr(outputs, 'pooler_output'):
+            multimodal_embeddings = outputs.pooler_output
+            print(f"🔧 Pooler 출력 사용: {multimodal_embeddings.shape}")
         else:
-            # 폴백: 풀링된 출력 사용
-            multimodal_embeddings = outputs.pooler_output if hasattr(outputs, 'pooler_output') else outputs.last_hidden_state.mean(dim=1)
+            # 폴백: 마지막 히든 상태의 평균
+            multimodal_embeddings = outputs.last_hidden_state.mean(dim=1)
+            print(f"🔧 히든 상태 평균 사용: {multimodal_embeddings.shape}")
         
-        # 동적 차원 대응: 각 배치마다 차원이 다를 수 있음
-        actual_hidden_size = multimodal_embeddings.shape[-1]
+        # logits_per_image는 가변 차원이므로 사용하지 않음!
         
-        # 분류기가 없거나 차원이 바뀐 경우 새로 생성
-        if self.classifier is None or not hasattr(self, 'last_hidden_size') or self.last_hidden_size != actual_hidden_size:
-            print(f"🔧 SigLIP2 출력 차원 변화 감지: {actual_hidden_size}")
+        # 이제 고정 차원을 사용하므로 분류기 한 번만 생성
+        if self.classifier is None:
+            actual_hidden_size = multimodal_embeddings.shape[-1]
+            print(f"🔧 SigLIP2 고정 차원 분류기 생성: {actual_hidden_size}")
             
-            # 간단한 분류기로 변경 (차원 변화에 강인)
             self.classifier = nn.Sequential(
-                nn.Linear(actual_hidden_size, max(8, actual_hidden_size // 2)),
+                nn.Linear(actual_hidden_size, actual_hidden_size // 2),
                 nn.ReLU(),
                 nn.Dropout(0.1),
-                nn.Linear(max(8, actual_hidden_size // 2), self.hparams.num_classes)
+                nn.Linear(actual_hidden_size // 2, self.hparams.num_classes)
             ).to(multimodal_embeddings.device)
             
-            self.last_hidden_size = actual_hidden_size
-            self.hidden_size_detected = True
-            print(f"✅ 분류기 재생성: {actual_hidden_size} → {max(8, actual_hidden_size // 2)} → {self.hparams.num_classes}")
+            print(f"✅ 고정 분류기 생성 완료: {actual_hidden_size} → {actual_hidden_size // 2} → {self.hparams.num_classes}")
         
-        # 언어 임베딩은 복잡성을 줄이기 위해 비활성화
-        # (SigLIP2가 이미 다국어를 네이티브 지원하므로)
+        # 언어 임베딩은 SigLIP2 네이티브 다국어 능력으로 대체
         
         # 분류
         logits = self.classifier(multimodal_embeddings)
