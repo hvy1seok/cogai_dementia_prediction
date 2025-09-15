@@ -180,7 +180,7 @@ class DementiaDataset(Dataset):
         return inputs
 
 def create_dataloaders(data_dir: str,
-                      processor: Siglip2Processor,
+                      processor: AutoProcessor,  # SigLIP2 지원
                       config,
                       train_split: float = 0.8,
                       val_split: float = 0.1,

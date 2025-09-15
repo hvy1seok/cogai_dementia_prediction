@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import librosa
 import numpy as np
 from PIL import Image
-from transformers import Siglip2Processor
+from transformers import AutoProcessor  # SigLIP2 지원
 import argparse
 import json
 from typing import Dict, List, Tuple
@@ -37,7 +37,7 @@ class DementiaPredictor:
         self.model.eval()
         
         # 프로세서 로드
-        self.processor = Siglip2Processor.from_pretrained(config.model_name)
+        self.processor = AutoProcessor.from_pretrained(config.model_name)  # SigLIP2 지원
         
         # 오디오 처리기
         self.audio_processor = AudioToMelSpectrogram(
