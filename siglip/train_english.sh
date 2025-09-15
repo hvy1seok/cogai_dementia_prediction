@@ -10,7 +10,7 @@ OUTPUT_DIR="../modules/outputs/siglip/English"
 MODEL_NAME="google/siglip2-base-patch16-naflex"
 BATCH_SIZE=16
 LEARNING_RATE=2e-5
-NUM_EPOCHS=10
+NUM_EPOCHS=100
 LANGUAGE="English"
 
 # 출력 디렉토리 생성
@@ -29,7 +29,7 @@ echo "  에포크 수: $NUM_EPOCHS"
 echo ""
 
 # Python 명령어 확인
-PYTHON_CMD=""
+PYTHON_CMD=""자
 if command -v python3 &> /dev/null; then
     PYTHON_CMD="python3"
 elif command -v python &> /dev/null; then
