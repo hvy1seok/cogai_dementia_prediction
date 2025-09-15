@@ -177,16 +177,7 @@ class DementiaDataset(Dataset):
         if 'attention_mask' not in inputs and 'input_ids' in inputs:
             inputs['attention_mask'] = torch.ones_like(inputs['input_ids'])
         
-        # 디버깅: 첫 번째 아이템에서 키 확인 (클래스 레벨에서 한 번만)
-        if not hasattr(DementiaDataset, '_debug_printed'):
-            print(f"🔍 SigLIP2 프로세서 출력 키들: {list(inputs.keys())}")
-            print(f"🔍 각 키의 타입과 크기:")
-            for k, v in inputs.items():
-                if isinstance(v, torch.Tensor):
-                    print(f"  {k}: {v.shape} ({v.dtype})")
-                else:
-                    print(f"  {k}: {type(v)} - {v}")
-            DementiaDataset._debug_printed = True
+        # 디버깅 완료 - 제거됨
         
         # 라벨 추가
         inputs['labels'] = torch.tensor(item['label'], dtype=torch.long)

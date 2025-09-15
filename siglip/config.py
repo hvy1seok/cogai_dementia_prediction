@@ -9,7 +9,7 @@ import os
 class SigLIPConfig:
     # 모델 설정
     model_name: str = "google/siglip2-base-patch16-naflex"
-    max_length: int = 512
+    max_length: int = 64  # SigLIP2 모델의 최대 텍스트 길이
     image_size: int = 224
     
     # 오디오 처리 설정
