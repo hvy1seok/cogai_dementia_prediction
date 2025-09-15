@@ -120,7 +120,7 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
         "precision": "16-mixed" if training_config.fp16 else "32",
         "gradient_clip_val": training_config.max_grad_norm,
         "accumulate_grad_batches": training_config.gradient_accumulation_steps,
-        "log_every_n_steps": training_config.logging_steps,
+        "log_every_n_steps": 10,  # 32 배치보다 작게 설정
         "check_val_every_n_epoch": None,  # validation 비활성화
         "enable_progress_bar": True,
         "enable_model_summary": True,
@@ -128,7 +128,7 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     
     # 멀티 GPU 설정
     if torch.cuda.device_count() > 1:
-        trainer_kwargs["strategy"] = DDPStrategy(find_unused_parameters=False)
+        trainer_kwargs["strategy"] = DDPStrategy(find_unused_parameters=True)  # 동적 분류기 때문에 True 필요
         print(f"멀티 GPU 훈련 설정: {torch.cuda.device_count()}개 GPU 사용")
     
     # 훈련기 생성
