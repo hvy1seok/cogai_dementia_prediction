@@ -91,44 +91,27 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             # 폴백: 풀링된 출력 사용
             multimodal_embeddings = outputs.pooler_output if hasattr(outputs, 'pooler_output') else outputs.last_hidden_state.mean(dim=1)
         
-        # 첫 번째 실행 시 분류기 동적 생성
-        if not self.hidden_size_detected:
-            actual_hidden_size = multimodal_embeddings.shape[-1]
-            print(f"🔧 SigLIP2 실제 출력 차원: {actual_hidden_size}")
+        # 동적 차원 대응: 각 배치마다 차원이 다를 수 있음
+        actual_hidden_size = multimodal_embeddings.shape[-1]
+        
+        # 분류기가 없거나 차원이 바뀐 경우 새로 생성
+        if self.classifier is None or not hasattr(self, 'last_hidden_size') or self.last_hidden_size != actual_hidden_size:
+            print(f"🔧 SigLIP2 출력 차원 변화 감지: {actual_hidden_size}")
             
+            # 간단한 분류기로 변경 (차원 변화에 강인)
             self.classifier = nn.Sequential(
-                nn.Linear(actual_hidden_size, actual_hidden_size // 2),
+                nn.Linear(actual_hidden_size, max(8, actual_hidden_size // 2)),
                 nn.ReLU(),
                 nn.Dropout(0.1),
-                nn.Linear(actual_hidden_size // 2, self.hparams.num_classes)
+                nn.Linear(max(8, actual_hidden_size // 2), self.hparams.num_classes)
             ).to(multimodal_embeddings.device)
             
+            self.last_hidden_size = actual_hidden_size
             self.hidden_size_detected = True
-            print(f"✅ 분류기 동적 생성 완료: {actual_hidden_size} → {actual_hidden_size // 2} → {self.hparams.num_classes}")
+            print(f"✅ 분류기 재생성: {actual_hidden_size} → {max(8, actual_hidden_size // 2)} → {self.hparams.num_classes}")
         
-        # 선택적 언어별 fine-tuning (크기 맞춤)
-        if self.language_embedding is not None and language_ids is not None:
-            try:
-                lang_emb = self.language_embedding(language_ids)  # [batch_size, 512]
-                
-                # 언어 임베딩 크기를 multimodal_embeddings에 맞춤
-                if multimodal_embeddings.shape[-1] != 768:
-                    # 동적으로 projection layer 크기 조정
-                    if not hasattr(self, 'language_projection_adjusted'):
-                        self.language_projection = nn.Linear(512, multimodal_embeddings.shape[-1]).to(multimodal_embeddings.device)
-                        self.language_projection_adjusted = True
-                
-                lang_emb = self.language_projection(lang_emb)  # [batch_size, actual_hidden_size]
-                
-                # 크기 확인 후 언어별 특징 추가
-                if multimodal_embeddings.shape == lang_emb.shape:
-                    multimodal_embeddings = multimodal_embeddings + lang_emb * 0.1
-                else:
-                    # 크기가 맞지 않으면 언어 임베딩 스킵
-                    print(f"⚠️ 언어 임베딩 크기 불일치: {multimodal_embeddings.shape} vs {lang_emb.shape} - 스킵")
-            except Exception as e:
-                print(f"⚠️ 언어 임베딩 처리 중 오류: {e} - 스킵")
-                pass  # 언어 임베딩 없이 계속 진행
+        # 언어 임베딩은 복잡성을 줄이기 위해 비활성화
+        # (SigLIP2가 이미 다국어를 네이티브 지원하므로)
         
         # 분류
         logits = self.classifier(multimodal_embeddings)
