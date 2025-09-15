@@ -12,6 +12,7 @@ import wandb
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
 import numpy as np
 from typing import Dict, List, Optional
+from torchmetrics import Accuracy
 
 class SigLIPDementiaClassifier(pl.LightningModule):
     """
@@ -72,9 +73,9 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         }
         
         # 메트릭 초기화
-        self.train_accuracy = pl.metrics.Accuracy()
-        self.val_accuracy = pl.metrics.Accuracy()
-        self.test_accuracy = pl.metrics.Accuracy()
+        self.train_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
+        self.val_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
+        self.test_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
         
     def forward(self, input_ids, attention_mask, pixel_values, language_ids=None):
         """순전파 - SigLIP2 네이티브 다국어 지원"""
