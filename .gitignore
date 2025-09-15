@@ -1,0 +1,110 @@
+# Data directories and files
+dementia_fulldata/
+fulldata_71/
+training_dset/
+Pitt/
+원석자료*/
+원석자료-001/
+data_split*
+*data_split*
+datasets/
+*dataset*/
+*_dataset/
+dataset_*/
+splitteddata/
+
+# Audio and media files
+*.wav
+*.mp3
+*.mp4
+*.avi
+*.flac
+*.m4a
+*.ogg
+
+# Data files
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.parquet
+*.feather
+
+# Archive files
+*.tar
+*.zip
+*.7z
+*.rar
+*.gz
+
+# uv related
+.python-version
+uv.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and databases
+*.log
+*.sqlite
+mlruns/
+wandb/
+outputs/
+checkpoints/
+lightning_logs/
+
+# Model files
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+models/*.pt
+models/*.pth
+models/*.ckpt
+
+# Hugging Face cache
+.cache/
+transformers_cache/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db 

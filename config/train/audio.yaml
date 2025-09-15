@@ -1,0 +1,36 @@
+# 데이터 관련 설정
+data:
+  batch_size: 32
+  num_workers: 4
+  train_ratio: 0.8
+
+# 모델 관련 설정
+model:
+  name: "densenet"  # densenet, resnet, mobilenet
+  pretrained: true
+  dropout: 0.5
+
+# 학습 관련 설정
+training:
+  epochs: 100
+  learning_rate: 1e-4
+  warmup_steps: 100
+  gradient_clip_val: 1.0
+  accelerator: "gpu"
+  devices: 1
+  precision: 32
+
+# 경로 설정
+paths:
+  data_dir: "training_dset"
+  checkpoint_dir: "checkpoints"
+
+# wandb 설정
+wandb:
+  project: "dementia-prediction"
+  name: "Greek_audio_densenet"
+  entity: "maisonjang"
+  tags: ["audio", "Spanish"]
+
+# 언어 설정
+language: "Spanish"  # Greek, Spanish, Mandarin, English 
