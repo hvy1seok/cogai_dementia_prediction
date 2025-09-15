@@ -34,7 +34,7 @@ class SigLIPConfig:
     random_seed: int = 42
     
     # 경로 설정
-    data_dir: str = "../training_dset"
+    data_dir: str = "../../training_dset"
     output_dir: str = "../modules/outputs/siglip"
     checkpoint_dir: str = "../modules/outputs/siglip/checkpoints"
     

@@ -11,7 +11,7 @@ from language_parsers import test_parser, parse_all_languages
 def main():
     print("=== SigLIP2 언어별 파서 테스트 ===\n")
     
-    data_dir = "../training_dset"
+    data_dir = "../../training_dset"
     
     # 개별 언어 테스트
     languages = ['English', 'Greek', 'Spanish', 'Mandarin']

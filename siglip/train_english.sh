@@ -41,20 +41,10 @@ fi
 
 echo "Python 명령어: $PYTHON_CMD"
 
-# 데이터 파서 테스트 (선택적)
-read -p "데이터 파서 테스트를 실행하시겠습니까? (y/N): " test_parser
-if [[ $test_parser =~ ^[Yy]$ ]]; then
-    echo "데이터 파서 테스트 실행 중..."
-    $PYTHON_CMD test_parser.py
-    echo ""
-fi
-
-# 훈련 시작 확인
-read -p "영어 모델 훈련을 시작하시겠습니까? (y/N): " confirm
-if [[ ! $confirm =~ ^[Yy]$ ]]; then
-    echo "훈련이 취소되었습니다."
-    exit 0
-fi
+# 데이터 파서 테스트 자동 실행
+echo "데이터 파서 테스트 실행 중..."
+$PYTHON_CMD test_parser.py
+echo ""
 
 echo "영어 모델 훈련 시작..."
 echo "================================"

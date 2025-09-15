@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 def debug_english_parser():
-    data_dir = Path("../training_dset")
+    data_dir = Path("../../training_dset")
     print(f"기본 데이터 디렉토리: {data_dir}")
     print(f"절대 경로: {data_dir.absolute()}")
     print(f"존재 여부: {data_dir.exists()}")

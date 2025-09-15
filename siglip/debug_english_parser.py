@@ -9,7 +9,7 @@ sys.path.append('.')
 from language_parsers import EnglishParser
 
 def test_english_parser():
-    data_dir = "../training_dset"
+    data_dir = "../../training_dset"
     parser = EnglishParser(data_dir)
     
     print(f"Parser language: {parser.language}")

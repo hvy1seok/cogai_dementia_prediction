@@ -35,12 +35,8 @@ echo ""
 echo "총 $TOTAL_EXPERIMENTS개 실험 예정"
 echo ""
 
-# 실행 확인
-read -p "모든 실험을 순차적으로 실행하시겠습니까? (y/N): " confirm
-if [[ ! $confirm =~ ^[Yy]$ ]]; then
-    echo "실험이 취소되었습니다."
-    exit 0
-fi
+# 자동 실험 시작
+echo "모든 실험을 순차적으로 실행합니다..."
 
 # 실험 결과 저장할 로그 파일
 LOG_DIR="../modules/outputs/siglip/experiment_logs"
