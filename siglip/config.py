@@ -8,7 +8,7 @@ import os
 @dataclass
 class SigLIPConfig:
     # 모델 설정
-    model_name: str = "google/siglip-base-patch16-224"
+    model_name: str = "google/siglip2-base-patch16-naflex"
     max_length: int = 512
     image_size: int = 224
     

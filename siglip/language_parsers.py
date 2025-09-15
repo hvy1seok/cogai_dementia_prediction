@@ -103,22 +103,8 @@ class EnglishParser(BaseLanguageParser):
         """Pitt 폴더 구조에서 데이터 파싱"""
         data = []
         
-        # 디버깅 정보 출력
-        print(f"🔍 영어 파서 디버깅:")
-        print(f"  self.data_dir: {self.data_dir}")
-        print(f"  self.pitt_dir: {self.pitt_dir}")
-        print(f"  pitt_dir 절대경로: {self.pitt_dir.absolute()}")
-        print(f"  pitt_dir 존재여부: {self.pitt_dir.exists()}")
-        
         textdata_dir = self.pitt_dir / "textdata"
         voicedata_dir = self.pitt_dir / "voicedata"
-        
-        print(f"  textdata_dir: {textdata_dir}")
-        print(f"  textdata_dir 절대경로: {textdata_dir.absolute()}")
-        print(f"  textdata_dir 존재여부: {textdata_dir.exists()}")
-        print(f"  voicedata_dir: {voicedata_dir}")
-        print(f"  voicedata_dir 절대경로: {voicedata_dir.absolute()}")
-        print(f"  voicedata_dir 존재여부: {voicedata_dir.exists()}")
         
         if not textdata_dir.exists() or not voicedata_dir.exists():
             print(f"⚠️ {self.language}: Pitt/textdata 또는 Pitt/voicedata 폴더가 없습니다.")

@@ -6,7 +6,7 @@ Write-Host "시작 시간: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 # 설정
 $DATA_DIR = "../training_dset"
 $OUTPUT_DIR = "../modules/outputs/siglip/English"
-$MODEL_NAME = "google/siglip2-base-patch16-224"
+$MODEL_NAME = "google/siglip2-base-patch16-naflex"
 $BATCH_SIZE = 8
 $LEARNING_RATE = "2e-5"
 $NUM_EPOCHS = 10

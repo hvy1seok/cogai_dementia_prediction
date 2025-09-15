@@ -11,7 +11,7 @@ import pandas as pd
 from PIL import Image
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
-from transformers import Siglip2Processor
+from transformers import AutoProcessor  # SigLIP2 지원
 from torch.utils.data import Dataset, DataLoader
 import soundfile as sf
 from language_parsers import parse_all_languages, get_language_parser
@@ -84,7 +84,7 @@ class DementiaDataset(Dataset):
     
     def __init__(self, 
                  data_dir: str,
-                 processor: Siglip2Processor,
+                 processor: AutoProcessor,  # SigLIP2 지원
                  audio_processor: AudioToMelSpectrogram,
                  split: str = "train",
                  max_length: int = 512,

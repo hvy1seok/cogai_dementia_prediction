@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, Learning
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.strategies import DDPStrategy
 import wandb
-from transformers import Siglip2Processor
+from transformers import AutoProcessor  # SigLIP2 지원
 import argparse
 from datetime import datetime
 
@@ -92,7 +92,7 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     
     # SigLIP2 프로세서 로드
     print("SigLIP2 프로세서 로드 중...")
-    processor = Siglip2Processor.from_pretrained(config.model_name)
+    processor = AutoProcessor.from_pretrained(config.model_name)  # SigLIP2 지원
     
     # 데이터로더 생성
     print("데이터로더 생성 중...")

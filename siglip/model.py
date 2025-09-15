@@ -13,11 +13,15 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc
 import numpy as np
 from typing import Dict, List, Optional
 
-class SigLIP2DementiaClassifier(pl.LightningModule):
-    """SigLIP2 기반 치매 진단 분류기"""
+class SigLIPDementiaClassifier(pl.LightningModule):
+    """
+    SigLIP2 기반 다국어 치매 진단 분류기
+    - Base: SigLIP2 (google/siglip2-base-patch16-naflex)
+    - Native: Multilingual vision-language understanding
+    """
     
     def __init__(self, 
-                 model_name: str = "google/siglip2-base-patch16-224",
+                 model_name: str = "google/siglip2-base-patch16-naflex",
                  num_classes: int = 2,
                  learning_rate: float = 2e-5,
                  weight_decay: float = 0.01,
@@ -28,46 +32,32 @@ class SigLIP2DementiaClassifier(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         
-        # SigLIP2 모델 로드 - 여러 방법 시도
-        model_loaded = False
+        # SigLIP2 모델 로드 (사전훈련 가중치 사용)
+        print("🔄 SigLIP2 모델 로드 시도...")
+        self.siglip = AutoModel.from_pretrained(model_name)
+        print(f"✅ SigLIP2 모델 로드 성공! 타입: {type(self.siglip)}")
+        print(f"📊 모델 크기: {self.siglip.config.vision_config.hidden_size if hasattr(self.siglip.config, 'vision_config') else '알 수 없음'}")
         
-        # 방법 1: 직접 SigLIP2 로드
-        try:
-            from transformers import Siglip2Model, Siglip2Config
-            print("🔄 SigLIP2 모델 직접 로드 시도...")
-            self.siglip2 = Siglip2Model.from_pretrained(model_name)
-            print("✅ SigLIP2 모델 로드 성공!")
-            model_loaded = True
-        except Exception as e:
-            print(f"⚠️ 방법 1 실패: {e}")
-        
-        # 방법 2: Config만 가져와서 새 SigLIP2 모델 생성
-        if not model_loaded:
-            try:
-                from transformers import Siglip2Model, Siglip2Config
-                print("🔄 SigLIP2 Config로 새 모델 생성 시도...")
-                config = Siglip2Config()  # 기본 설정 사용
-                self.siglip2 = Siglip2Model(config)
-                print("✅ 새 SigLIP2 모델 생성 성공! (사전훈련 가중치 없음)")
-                model_loaded = True
-            except Exception as e:
-                print(f"⚠️ 방법 2 실패: {e}")
-        
-        # 방법 3: AutoModel 폴백
-        if not model_loaded:
-            print("🔄 AutoModel 폴백 사용...")
-            self.siglip2 = AutoModel.from_pretrained(model_name)
-            print(f"로드된 모델 타입: {type(self.siglip2)}")
-            print(f"모델 설정: {self.siglip2.config.model_type if hasattr(self.siglip2.config, 'model_type') else 'Unknown'}")
-        
-        # 언어 임베딩 (언어 무관 학습을 위해)
+        # SigLIP2는 네이티브 다국어 지원 - 추가 언어 임베딩 선택적 사용
         if use_language_embedding:
-            self.language_embedding = nn.Embedding(10, 768)  # 최대 10개 언어 지원
+            # 선택적 언어별 fine-tuning을 위한 임베딩
+            self.language_embedding = nn.Embedding(10, 512)  # SigLIP2 크기에 맞춤
+            self.language_projection = nn.Linear(512, 768)
         else:
             self.language_embedding = None
+            self.language_projection = None
         
-        # 분류 헤드
-        hidden_size = self.siglip2.config.projection_dim
+        # 분류 헤드 - 다양한 config 속성 지원
+        if hasattr(self.siglip.config, 'projection_dim'):
+            hidden_size = self.siglip.config.projection_dim
+        elif hasattr(self.siglip.config, 'hidden_size'):
+            hidden_size = self.siglip.config.hidden_size
+        elif hasattr(self.siglip.config, 'vision_config') and hasattr(self.siglip.config.vision_config, 'hidden_size'):
+            hidden_size = self.siglip.config.vision_config.hidden_size
+        else:
+            hidden_size = 768  # 기본값
+        
+        print(f"🔧 분류 헤드 hidden_size: {hidden_size}")
         self.classifier = nn.Sequential(
             nn.Linear(hidden_size, hidden_size // 2),
             nn.ReLU(),
@@ -87,25 +77,35 @@ class SigLIP2DementiaClassifier(pl.LightningModule):
         self.test_accuracy = pl.metrics.Accuracy()
         
     def forward(self, input_ids, attention_mask, pixel_values, language_ids=None):
-        """순전파"""
+        """순전파 - SigLIP2 네이티브 다국어 지원"""
         # SigLIP2 모델 통과
-        outputs = self.siglip2(
+        outputs = self.siglip(
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values
         )
         
-        # 멀티모달 임베딩 추출
-        multimodal_embeddings = outputs.logits_per_image  # [batch_size, hidden_size]
+        # SigLIP2의 멀티모달 특징 추출
+        if hasattr(outputs, 'logits_per_image'):
+            multimodal_embeddings = outputs.logits_per_image  # [batch_size, projection_dim]
+        elif hasattr(outputs, 'image_embeds') and hasattr(outputs, 'text_embeds'):
+            # 이미지와 텍스트 임베딩 결합
+            multimodal_embeddings = (outputs.image_embeds + outputs.text_embeds) / 2
+        else:
+            # 폴백: 풀링된 출력 사용
+            multimodal_embeddings = outputs.pooler_output if hasattr(outputs, 'pooler_output') else outputs.last_hidden_state.mean(dim=1)
         
-        # 언어 임베딩 추가 (선택적)
+        # 선택적 언어별 fine-tuning
         if self.language_embedding is not None and language_ids is not None:
-            lang_embeddings = self.language_embedding(language_ids)
-            multimodal_embeddings = multimodal_embeddings + lang_embeddings
+            lang_emb = self.language_embedding(language_ids)  # [batch_size, 512]
+            lang_emb = self.language_projection(lang_emb)     # [batch_size, 768]
+            
+            # 언어별 특징 추가 (작은 가중치로)
+            if multimodal_embeddings.shape[-1] == lang_emb.shape[-1]:
+                multimodal_embeddings = multimodal_embeddings + lang_emb * 0.1
         
         # 분류
         logits = self.classifier(multimodal_embeddings)
-        
         return logits
     
     def training_step(self, batch, batch_idx):
@@ -339,9 +339,9 @@ class SigLIP2DementiaClassifier(pl.LightningModule):
             }
         }
 
-def create_model(config) -> SigLIP2DementiaClassifier:
+def create_model(config) -> SigLIPDementiaClassifier:
     """모델 생성"""
-    return SigLIP2DementiaClassifier(
+    return SigLIPDementiaClassifier(
         model_name=config.model_name,
         num_classes=2,  # 치매 여부 (0: 정상, 1: 치매)
         learning_rate=config.learning_rate,
