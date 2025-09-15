@@ -85,30 +85,23 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         if hasattr(outputs, 'image_embeds') and hasattr(outputs, 'text_embeds'):
             # 이미지와 텍스트 임베딩 결합 (고정 차원!)
             multimodal_embeddings = (outputs.image_embeds + outputs.text_embeds) / 2
-            print(f"🔧 고정 차원 임베딩 사용: {multimodal_embeddings.shape}")
         elif hasattr(outputs, 'pooler_output'):
             multimodal_embeddings = outputs.pooler_output
-            print(f"🔧 Pooler 출력 사용: {multimodal_embeddings.shape}")
         else:
             # 폴백: 마지막 히든 상태의 평균
             multimodal_embeddings = outputs.last_hidden_state.mean(dim=1)
-            print(f"🔧 히든 상태 평균 사용: {multimodal_embeddings.shape}")
         
         # logits_per_image는 가변 차원이므로 사용하지 않음!
         
         # 이제 고정 차원을 사용하므로 분류기 한 번만 생성
         if self.classifier is None:
             actual_hidden_size = multimodal_embeddings.shape[-1]
-            print(f"🔧 SigLIP2 고정 차원 분류기 생성: {actual_hidden_size}")
-            
             self.classifier = nn.Sequential(
                 nn.Linear(actual_hidden_size, actual_hidden_size // 2),
                 nn.ReLU(),
                 nn.Dropout(0.1),
                 nn.Linear(actual_hidden_size // 2, self.hparams.num_classes)
             ).to(multimodal_embeddings.device)
-            
-            print(f"✅ 고정 분류기 생성 완료: {actual_hidden_size} → {actual_hidden_size // 2} → {self.hparams.num_classes}")
         
         # 언어 임베딩은 SigLIP2 네이티브 다국어 능력으로 대체
         
@@ -218,6 +211,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         
         # 정확도 계산
         acc = self.test_accuracy(logits.softmax(dim=-1), batch['labels'])
+        
+        # AUC 계산 (배치별)
+        probs = F.softmax(logits, dim=-1)
+        if logits.shape[1] == 2 and len(torch.unique(batch['labels'])) > 1:
+            try:
+                batch_auc = roc_auc_score(batch['labels'].cpu(), probs[:, 1].cpu())
+                self.log('test_auc', batch_auc, prog_bar=True, sync_dist=True)
+            except ValueError:
+                # 배치에 한 클래스만 있는 경우 AUC 계산 불가
+                pass
         
         # 예측값 저장
         self.test_step_outputs.append({

@@ -48,14 +48,16 @@ def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
     """콜백 생성"""
     callbacks = []
     
-    # 모델 체크포인트 (에포크 기반)
+    # 모델 체크포인트 (AUC 기준 베스트 모델)
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_dir,
-        filename="siglip2-dementia-{epoch:02d}",
-        save_top_k=-1,  # 모든 에포크 저장
-        save_last=True,
+        filename="siglip2-dementia-best-auc-{test_auc:.3f}-epoch{epoch:02d}",
+        monitor="test_auc",  # AUC 기준으로 모니터링
+        mode="max",  # AUC 최대값 추적
+        save_top_k=3,  # 상위 3개 모델만 저장
+        save_last=True,  # 마지막 모델도 저장
         verbose=True,
-        every_n_epochs=1  # 매 에포크마다 저장
+        auto_insert_metric_name=False  # 파일명에 메트릭 이름 자동 추가 방지
     )
     callbacks.append(checkpoint_callback)
     
@@ -138,8 +140,17 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     print("훈련 시작...")
     trainer.fit(model, train_loader)
     
-    # 훈련 완료 후 테스트
-    print("테스트 실행...")
+    # 베스트 모델 로드 및 테스트
+    print("베스트 모델 로드 중...")
+    best_model_path = checkpoint_callback.best_model_path
+    if best_model_path and os.path.exists(best_model_path):
+        print(f"✅ 베스트 모델 경로: {best_model_path}")
+        # 베스트 모델 로드
+        model = SigLIPDementiaClassifier.load_from_checkpoint(best_model_path)
+        print("🏆 베스트 AUC 모델로 테스트 실행...")
+    else:
+        print("⚠️ 베스트 모델을 찾을 수 없습니다. 마지막 모델로 테스트합니다.")
+    
     trainer.test(model, test_loader)
     
     # wandb 종료
