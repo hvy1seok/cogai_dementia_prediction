@@ -305,6 +305,6 @@ def create_dataloaders(data_dir: str,
     print(f"📊 데이터 분할 완료:")
     print(f"  훈련 데이터: {len(train_dataset)} 샘플 ({train_split*100:.0f}%)")
     print(f"  테스트 데이터: {len(test_dataset)} 샘플 ({test_split*100:.0f}%)")
-    print(f"  전체 데이터: {total_size} 샘플")
+    print(f"  전체 데이터: {len(full_dataset)} 샘플")
     
     return train_loader, test_loader 
