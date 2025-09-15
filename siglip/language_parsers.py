@@ -90,24 +90,39 @@ class TrainingDatasetParser(BaseLanguageParser):
         return data
 
 class EnglishParser(BaseLanguageParser):
-    """영어 데이터 파서 - Pitt 구조 처리"""
+    """영어 데이터 파서 - 직접 textdata/voicedata 구조"""
     
     def __init__(self, data_dir: str):
         super().__init__(data_dir)
-        self.pitt_dir = Path(data_dir) / "English" / "Pitt"
+        # English 폴더가 이미 포함된 경로를 받음
+        if data_dir.endswith('English'):
+            self.english_dir = Path(data_dir)
+        else:
+            self.english_dir = Path(data_dir) / "English"
     
     def get_language_name(self) -> str:
         return "English"
     
     def parse_data(self) -> List[Dict]:
-        """Pitt 폴더 구조에서 데이터 파싱"""
+        """영어 데이터 구조에서 파싱"""
         data = []
         
-        textdata_dir = self.pitt_dir / "textdata"
-        voicedata_dir = self.pitt_dir / "voicedata"
+        # 디버깅 정보
+        print(f"🔍 영어 파서 디버깅:")
+        print(f"  self.data_dir: {self.data_dir}")
+        print(f"  self.english_dir: {self.english_dir}")
+        print(f"  english_dir 존재여부: {self.english_dir.exists()}")
+        
+        textdata_dir = self.english_dir / "textdata"
+        voicedata_dir = self.english_dir / "voicedata"
+        
+        print(f"  textdata_dir: {textdata_dir}")
+        print(f"  textdata_dir 존재여부: {textdata_dir.exists()}")
+        print(f"  voicedata_dir: {voicedata_dir}")
+        print(f"  voicedata_dir 존재여부: {voicedata_dir.exists()}")
         
         if not textdata_dir.exists() or not voicedata_dir.exists():
-            print(f"⚠️ {self.language}: Pitt/textdata 또는 Pitt/voicedata 폴더가 없습니다.")
+            print(f"⚠️ {self.language}: textdata 또는 voicedata 폴더가 없습니다.")
             return data
         
         # HC, AD 카테고리 처리 (MCI 제외)
@@ -120,70 +135,315 @@ class EnglishParser(BaseLanguageParser):
             text_cat_dir = textdata_dir / category
             voice_cat_dir = voicedata_dir / category
             
+            print(f"  {category} 폴더 확인:")
+            print(f"    text_cat_dir: {text_cat_dir} (존재: {text_cat_dir.exists()})")
+            print(f"    voice_cat_dir: {voice_cat_dir} (존재: {voice_cat_dir.exists()})")
+            
             if not text_cat_dir.exists() or not voice_cat_dir.exists():
-                print(f"⚠️ {self.language}/{category}: textdata 또는 voicedata 폴더가 없습니다.")
+                print(f"⚠️ {self.language}: {category} 폴더가 없습니다.")
                 continue
             
-            # 하위 폴더들 (cookie, fluency, recall, sentence) 처리
-            for subfolder in text_cat_dir.iterdir():
-                if not subfolder.is_dir():
-                    continue
-                    
-                voice_subfolder = voice_cat_dir / subfolder.name
-                if not voice_subfolder.exists():
+            # 텍스트 파일들을 기준으로 매칭
+            txt_files = list(text_cat_dir.glob("*.txt"))
+            print(f"    {category}에서 찾은 .txt 파일 개수: {len(txt_files)}")
+            
+            for txt_file in txt_files:
+                # tasks 파일은 제외 (메타데이터 파일)
+                if "tasks" in txt_file.stem:
                     continue
                 
-                # 각 하위 폴더에서 .txt와 .npy 파일 매칭
-                for txt_file in subfolder.glob("*.txt"):
-                    stem = txt_file.stem
-                    npy_file = voice_subfolder / f"{stem}.npy"
+                # 대응하는 .npy 파일 찾기
+                npy_file = voice_cat_dir / f"{txt_file.stem}.npy"
+                
+                if npy_file.exists():
+                    try:
+                        # 텍스트 읽기
+                        with open(txt_file, 'r', encoding='utf-8') as f:
+                            text = f.read().strip()
+                        
+                        if text:  # 텍스트가 비어있지 않은 경우만
+                            data.append({
+                                'audio_path': str(npy_file),
+                                'text': text,
+                                'label': label,
+                                'language': self.language,
+                                'source': f'{self.language}_{category}',
+                                'file_id': txt_file.stem
+                            })
                     
-                    if npy_file.exists():
-                        try:
-                            with open(txt_file, 'r', encoding='utf-8') as f:
-                                text = f.read().strip()
-                            
-                            if text:
-                                data.append({
-                                    'audio_path': str(npy_file),
-                                    'text': text,
-                                    'label': label,
-                                    'language': self.language,
-                                    'source': f'{self.language}_{category}_{subfolder.name}'
-                                })
-                        except Exception as e:
-                            print(f"파싱 오류 {txt_file}: {e}")
-                    else:
-                        print(f"⚠️ {self.language}/{category}/{subfolder.name}: 매칭되는 .npy 파일 없음: {npy_file}")
+                    except Exception as e:
+                        print(f"파싱 오류 {txt_file}: {e}")
+                else:
+                    print(f"⚠️ 매칭되는 음성 파일 없음: {npy_file}")
         
         return data
 
-class GreekParser(TrainingDatasetParser):
-    """그리스어 데이터 파서"""
+class GreekParser(BaseLanguageParser):
+    """그리스어 데이터 파서 - 직접 textdata/voicedata 구조"""
     
     def __init__(self, data_dir: str):
-        super().__init__(Path(data_dir) / "Greek")
+        super().__init__(data_dir)
+        # Greek 폴더가 이미 포함된 경로를 받음
+        if data_dir.endswith('Greek'):
+            self.greek_dir = Path(data_dir)
+        else:
+            self.greek_dir = Path(data_dir) / "Greek"
     
     def get_language_name(self) -> str:
         return "Greek"
+    
+    def parse_data(self) -> List[Dict]:
+        """그리스어 데이터 구조에서 파싱"""
+        data = []
+        
+        # 디버깅 정보
+        print(f"🔍 그리스어 파서 디버깅:")
+        print(f"  self.data_dir: {self.data_dir}")
+        print(f"  self.greek_dir: {self.greek_dir}")
+        print(f"  greek_dir 존재여부: {self.greek_dir.exists()}")
+        
+        textdata_dir = self.greek_dir / "textdata"
+        voicedata_dir = self.greek_dir / "voicedata"
+        
+        print(f"  textdata_dir: {textdata_dir}")
+        print(f"  textdata_dir 존재여부: {textdata_dir.exists()}")
+        print(f"  voicedata_dir: {voicedata_dir}")
+        print(f"  voicedata_dir 존재여부: {voicedata_dir.exists()}")
+        
+        if not textdata_dir.exists() or not voicedata_dir.exists():
+            print(f"⚠️ {self.language}: textdata 또는 voicedata 폴더가 없습니다.")
+            return data
+        
+        # HC, AD 카테고리 처리 (MCI 제외)
+        categories = {
+            'HC': 0,   # Healthy Control - 정상
+            'AD': 1,   # Alzheimer's Disease - 치매
+        }
+        
+        for category, label in categories.items():
+            text_cat_dir = textdata_dir / category
+            voice_cat_dir = voicedata_dir / category
+            
+            print(f"  {category} 폴더 확인:")
+            print(f"    text_cat_dir: {text_cat_dir} (존재: {text_cat_dir.exists()})")
+            print(f"    voice_cat_dir: {voice_cat_dir} (존재: {voice_cat_dir.exists()})")
+            
+            if not text_cat_dir.exists() or not voice_cat_dir.exists():
+                print(f"⚠️ {self.language}: {category} 폴더가 없습니다.")
+                continue
+            
+            # 텍스트 파일들을 기준으로 매칭
+            txt_files = list(text_cat_dir.glob("*.txt"))
+            print(f"    {category}에서 찾은 .txt 파일 개수: {len(txt_files)}")
+            
+            for txt_file in txt_files:
+                # tasks 파일은 제외 (메타데이터 파일)
+                if "tasks" in txt_file.stem:
+                    continue
+                
+                # 대응하는 .npy 파일 찾기
+                npy_file = voice_cat_dir / f"{txt_file.stem}.npy"
+                
+                if npy_file.exists():
+                    try:
+                        # 텍스트 읽기
+                        with open(txt_file, 'r', encoding='utf-8') as f:
+                            text = f.read().strip()
+                        
+                        if text:  # 텍스트가 비어있지 않은 경우만
+                            data.append({
+                                'audio_path': str(npy_file),
+                                'text': text,
+                                'label': label,
+                                'language': self.language,
+                                'source': f'{self.language}_{category}',
+                                'file_id': txt_file.stem
+                            })
+                    
+                    except Exception as e:
+                        print(f"파싱 오류 {txt_file}: {e}")
+                else:
+                    print(f"⚠️ 매칭되는 음성 파일 없음: {npy_file}")
+        
+        return data
 
-class SpanishParser(TrainingDatasetParser):
-    """스페인어 데이터 파서"""
+class SpanishParser(BaseLanguageParser):
+    """스페인어 데이터 파서 - 직접 textdata/voicedata 구조"""
     
     def __init__(self, data_dir: str):
-        super().__init__(Path(data_dir) / "Spanish")
+        super().__init__(data_dir)
+        # Spanish 폴더가 이미 포함된 경로를 받음
+        if data_dir.endswith('Spanish'):
+            self.spanish_dir = Path(data_dir)
+        else:
+            self.spanish_dir = Path(data_dir) / "Spanish"
     
     def get_language_name(self) -> str:
         return "Spanish"
+    
+    def parse_data(self) -> List[Dict]:
+        """스페인어 데이터 구조에서 파싱"""
+        data = []
+        
+        # 디버깅 정보
+        print(f"🔍 스페인어 파서 디버깅:")
+        print(f"  self.data_dir: {self.data_dir}")
+        print(f"  self.spanish_dir: {self.spanish_dir}")
+        print(f"  spanish_dir 존재여부: {self.spanish_dir.exists()}")
+        
+        textdata_dir = self.spanish_dir / "textdata"
+        voicedata_dir = self.spanish_dir / "voicedata"
+        
+        print(f"  textdata_dir: {textdata_dir}")
+        print(f"  textdata_dir 존재여부: {textdata_dir.exists()}")
+        print(f"  voicedata_dir: {voicedata_dir}")
+        print(f"  voicedata_dir 존재여부: {voicedata_dir.exists()}")
+        
+        if not textdata_dir.exists() or not voicedata_dir.exists():
+            print(f"⚠️ {self.language}: textdata 또는 voicedata 폴더가 없습니다.")
+            return data
+        
+        # HC, AD 카테고리 처리 (MCI 제외)
+        categories = {
+            'HC': 0,   # Healthy Control - 정상
+            'AD': 1,   # Alzheimer's Disease - 치매
+        }
+        
+        for category, label in categories.items():
+            text_cat_dir = textdata_dir / category
+            voice_cat_dir = voicedata_dir / category
+            
+            print(f"  {category} 폴더 확인:")
+            print(f"    text_cat_dir: {text_cat_dir} (존재: {text_cat_dir.exists()})")
+            print(f"    voice_cat_dir: {voice_cat_dir} (존재: {voice_cat_dir.exists()})")
+            
+            if not text_cat_dir.exists() or not voice_cat_dir.exists():
+                print(f"⚠️ {self.language}: {category} 폴더가 없습니다.")
+                continue
+            
+            # 텍스트 파일들을 기준으로 매칭
+            txt_files = list(text_cat_dir.glob("*.txt"))
+            print(f"    {category}에서 찾은 .txt 파일 개수: {len(txt_files)}")
+            
+            for txt_file in txt_files:
+                # tasks 파일은 제외 (메타데이터 파일)
+                if "tasks" in txt_file.stem:
+                    continue
+                
+                # 대응하는 .npy 파일 찾기
+                npy_file = voice_cat_dir / f"{txt_file.stem}.npy"
+                
+                if npy_file.exists():
+                    try:
+                        # 텍스트 읽기
+                        with open(txt_file, 'r', encoding='utf-8') as f:
+                            text = f.read().strip()
+                        
+                        if text:  # 텍스트가 비어있지 않은 경우만
+                            data.append({
+                                'audio_path': str(npy_file),
+                                'text': text,
+                                'label': label,
+                                'language': self.language,
+                                'source': f'{self.language}_{category}',
+                                'file_id': txt_file.stem
+                            })
+                    
+                    except Exception as e:
+                        print(f"파싱 오류 {txt_file}: {e}")
+                else:
+                    print(f"⚠️ 매칭되는 음성 파일 없음: {npy_file}")
+        
+        return data
 
-class MandarinParser(TrainingDatasetParser):
-    """중국어(만다린) 데이터 파서"""
+class MandarinParser(BaseLanguageParser):
+    """중국어(만다린) 데이터 파서 - 직접 textdata/voicedata 구조"""
     
     def __init__(self, data_dir: str):
-        super().__init__(Path(data_dir) / "Mandarin")
+        super().__init__(data_dir)
+        # Mandarin 폴더가 이미 포함된 경로를 받음
+        if data_dir.endswith('Mandarin'):
+            self.mandarin_dir = Path(data_dir)
+        else:
+            self.mandarin_dir = Path(data_dir) / "Mandarin"
     
     def get_language_name(self) -> str:
         return "Mandarin"
+    
+    def parse_data(self) -> List[Dict]:
+        """중국어(만다린) 데이터 구조에서 파싱"""
+        data = []
+        
+        # 디버깅 정보
+        print(f"🔍 중국어 파서 디버깅:")
+        print(f"  self.data_dir: {self.data_dir}")
+        print(f"  self.mandarin_dir: {self.mandarin_dir}")
+        print(f"  mandarin_dir 존재여부: {self.mandarin_dir.exists()}")
+        
+        textdata_dir = self.mandarin_dir / "textdata"
+        voicedata_dir = self.mandarin_dir / "voicedata"
+        
+        print(f"  textdata_dir: {textdata_dir}")
+        print(f"  textdata_dir 존재여부: {textdata_dir.exists()}")
+        print(f"  voicedata_dir: {voicedata_dir}")
+        print(f"  voicedata_dir 존재여부: {voicedata_dir.exists()}")
+        
+        if not textdata_dir.exists() or not voicedata_dir.exists():
+            print(f"⚠️ {self.language}: textdata 또는 voicedata 폴더가 없습니다.")
+            return data
+        
+        # HC, AD 카테고리 처리 (MCI 제외)
+        categories = {
+            'HC': 0,   # Healthy Control - 정상
+            'AD': 1,   # Alzheimer's Disease - 치매
+        }
+        
+        for category, label in categories.items():
+            text_cat_dir = textdata_dir / category
+            voice_cat_dir = voicedata_dir / category
+            
+            print(f"  {category} 폴더 확인:")
+            print(f"    text_cat_dir: {text_cat_dir} (존재: {text_cat_dir.exists()})")
+            print(f"    voice_cat_dir: {voice_cat_dir} (존재: {voice_cat_dir.exists()})")
+            
+            if not text_cat_dir.exists() or not voice_cat_dir.exists():
+                print(f"⚠️ {self.language}: {category} 폴더가 없습니다.")
+                continue
+            
+            # 텍스트 파일들을 기준으로 매칭
+            txt_files = list(text_cat_dir.glob("*.txt"))
+            print(f"    {category}에서 찾은 .txt 파일 개수: {len(txt_files)}")
+            
+            for txt_file in txt_files:
+                # tasks 파일은 제외 (메타데이터 파일)
+                if "tasks" in txt_file.stem:
+                    continue
+                
+                # 대응하는 .npy 파일 찾기
+                npy_file = voice_cat_dir / f"{txt_file.stem}.npy"
+                
+                if npy_file.exists():
+                    try:
+                        # 텍스트 읽기
+                        with open(txt_file, 'r', encoding='utf-8') as f:
+                            text = f.read().strip()
+                        
+                        if text:  # 텍스트가 비어있지 않은 경우만
+                            data.append({
+                                'audio_path': str(npy_file),
+                                'text': text,
+                                'label': label,
+                                'language': self.language,
+                                'source': f'{self.language}_{category}',
+                                'file_id': txt_file.stem
+                            })
+                    
+                    except Exception as e:
+                        print(f"파싱 오류 {txt_file}: {e}")
+                else:
+                    print(f"⚠️ 매칭되는 음성 파일 없음: {npy_file}")
+        
+        return data
 
 def get_language_parser(language: str, data_dir: str) -> BaseLanguageParser:
     """언어별 파서 팩토리 함수"""
@@ -199,19 +459,11 @@ def get_language_parser(language: str, data_dir: str) -> BaseLanguageParser:
     
     print(f"🔧 파서 생성: {language}, 데이터 경로: {data_dir}")
     
-    # English는 특별 처리 (data_dir를 직접 전달)
-    if language == 'English':
-        print(f"🔧 영어 파서 생성: {parsers[language].__name__}")
-        parser = parsers[language](data_dir)
-        print(f"🔧 생성된 파서 타입: {type(parser)}")
-        return parser
-    else:
-        # 다른 언어들은 언어별 하위 디렉토리 전달
-        lang_data_dir = os.path.join(data_dir, language)
-        print(f"🔧 {language} 파서 생성: {parsers[language].__name__}, 경로: {lang_data_dir}")
-        parser = parsers[language](lang_data_dir)
-        print(f"🔧 생성된 파서 타입: {type(parser)}")
-        return parser
+    # 모든 언어가 동일한 구조를 사용하므로 data_dir를 직접 전달
+    print(f"🔧 {language} 파서 생성: {parsers[language].__name__}")
+    parser = parsers[language](data_dir)
+    print(f"🔧 생성된 파서 타입: {type(parser)}")
+    return parser
 
 def parse_all_languages(data_dir: str, languages: List[str] = None) -> List[Dict]:
     """모든 언어 데이터 파싱"""
