@@ -14,6 +14,100 @@ import numpy as np
 from typing import Dict, List, Optional
 from torchmetrics import Accuracy
 
+# Lion Optimizer 라이브러리 임포트
+try:
+    from lion_pytorch import Lion
+    LION_AVAILABLE = True
+    print("🦁 lion-pytorch 라이브러리 로드 성공")
+except ImportError:
+    LION_AVAILABLE = False
+    print("⚠️ lion-pytorch 라이브러리를 찾을 수 없습니다. pip install lion-pytorch를 실행하세요.")
+
+# SAM Optimizer 구현 (참조: https://github.com/davda54/sam)
+class SAM(torch.optim.Optimizer):
+    """SAM: Sharpness-Aware Minimization"""
+    def __init__(self, params, base_optimizer, rho=0.05, adaptive=False, **kwargs):
+        assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
+        
+        defaults = dict(rho=rho, adaptive=adaptive, **kwargs)
+        super(SAM, self).__init__(params, defaults)
+        
+        self.base_optimizer = base_optimizer(self.param_groups, **kwargs)
+        self.param_groups = self.base_optimizer.param_groups
+        self.defaults.update(self.base_optimizer.defaults)
+    
+    @torch.no_grad()
+    def first_step(self, zero_grad=False):
+        grad_norm = self._grad_norm()
+        for group in self.param_groups:
+            scale = group["rho"] / (grad_norm + 1e-12)
+            
+            for p in group["params"]:
+                if p.grad is None: continue
+                self.state[p]["old_p"] = p.data.clone()
+                e_w = (torch.pow(p, 2) if group["adaptive"] else 1.0) * p.grad * scale.to(p)
+                p.add_(e_w)  # climb to the local maximum "w + e(w)"
+        
+        if zero_grad: self.zero_grad()
+    
+    @torch.no_grad()
+    def second_step(self, zero_grad=False):
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.grad is None: continue
+                p.data = self.state[p]["old_p"]  # get back to "w" from "w + e(w)"
+        
+        self.base_optimizer.step()  # do the actual "sharpness-aware" update
+        
+        if zero_grad: self.zero_grad()
+    
+    @torch.no_grad()
+    def step(self, closure=None):
+        assert closure is not None, "Sharpness Aware Minimization requires closure, but it was not provided"
+        closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
+        
+        self.first_step(zero_grad=True)
+        closure()
+        self.second_step()
+    
+    def _grad_norm(self):
+        shared_device = self.param_groups[0]["params"][0].device  # put everything on the same device, in case of model parallelism
+        norm = torch.norm(
+                    torch.stack([
+                        ((torch.abs(p) if group["adaptive"] else 1.0) * p.grad).norm(dtype=torch.float32)
+                        for group in self.param_groups for p in group["params"]
+                        if p.grad is not None
+                    ]),
+                    dtype=torch.float32
+                )
+        return norm.to(shared_device)
+    
+    def load_state_dict(self, state_dict):
+        super().load_state_dict(state_dict)
+        self.base_optimizer.param_groups = self.param_groups
+
+class FocalLoss(nn.Module):
+    """
+    Focal Loss 구현 - 불균형 데이터셋에 효과적
+    """
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+    
+    def forward(self, inputs, targets):
+        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
+        
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
 class SigLIPDementiaClassifier(pl.LightningModule):
     """
     SigLIP2 기반 다국어 치매 진단 분류기
@@ -28,7 +122,12 @@ class SigLIPDementiaClassifier(pl.LightningModule):
                  weight_decay: float = 0.01,
                  warmup_steps: int = 100,
                  max_epochs: int = 10,
-                 use_language_embedding: bool = True):
+                 use_language_embedding: bool = True,
+                 loss_type: str = "cross_entropy",  # "cross_entropy", "focal", "bce"
+                 focal_alpha: float = 1.0,
+                 focal_gamma: float = 2.0,
+                 optimizer_type: str = "adamw",  # "adamw", "lion", "sam"
+                 sam_rho: float = 0.05):
         
         super().__init__()
         self.save_hyperparameters()
@@ -59,6 +158,17 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             'English': 0, 'Greek': 1, 'Korean': 2, 'Spanish': 3, 'French': 4,
             'German': 5, 'Italian': 6, 'Portuguese': 7, 'Japanese': 8, 'Chinese': 9
         }
+        
+        # 손실 함수 초기화
+        if loss_type == "focal":
+            self.criterion = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
+            print(f"🎯 Focal Loss 사용: alpha={focal_alpha}, gamma={focal_gamma}")
+        elif loss_type == "bce":
+            self.criterion = nn.BCEWithLogitsLoss()
+            print("⚖️ BCE Loss 사용")
+        else:
+            self.criterion = nn.CrossEntropyLoss()
+            print("📊 Cross Entropy Loss 사용")
         
         # 메트릭 초기화
         self.train_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
@@ -132,7 +242,13 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         )
         
         # 손실 계산
-        loss = F.cross_entropy(logits, batch['labels'])
+        if self.hparams.loss_type == "bce":
+            # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
+            labels_bce = batch['labels'].float()
+            logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
+            loss = self.criterion(logits_bce, labels_bce)
+        else:
+            loss = self.criterion(logits, batch['labels'])
         
         # 정확도 계산
         acc = self.train_accuracy(logits.softmax(dim=-1), batch['labels'])
@@ -166,7 +282,13 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         )
         
         # 손실 계산
-        loss = F.cross_entropy(logits, batch['labels'])
+        if self.hparams.loss_type == "bce":
+            # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
+            labels_bce = batch['labels'].float()
+            logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
+            loss = self.criterion(logits_bce, labels_bce)
+        else:
+            loss = self.criterion(logits, batch['labels'])
         
         # 정확도 계산
         acc = self.val_accuracy(logits.softmax(dim=-1), batch['labels'])
@@ -207,7 +329,13 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         )
         
         # 손실 계산
-        loss = F.cross_entropy(logits, batch['labels'])
+        if self.hparams.loss_type == "bce":
+            # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
+            labels_bce = batch['labels'].float()
+            logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
+            loss = self.criterion(logits_bce, labels_bce)
+        else:
+            loss = self.criterion(logits, batch['labels'])
         
         # 정확도 계산
         acc = self.test_accuracy(logits.softmax(dim=-1), batch['labels'])
@@ -358,11 +486,39 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             },
         ]
         
-        optimizer = torch.optim.AdamW(
-            optimizer_grouped_parameters,
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay
-        )
+        # 옵티마이저 선택
+        if self.hparams.optimizer_type == "lion":
+            if not LION_AVAILABLE:
+                print("⚠️ lion-pytorch 라이브러리가 없습니다. AdamW로 대체합니다.")
+                optimizer = torch.optim.AdamW(
+                    optimizer_grouped_parameters,
+                    lr=self.hparams.learning_rate,
+                    weight_decay=self.hparams.weight_decay
+                )
+                print(f"⚡ AdamW Optimizer 사용 (Lion 대체): lr={self.hparams.learning_rate}")
+            else:
+                optimizer = Lion(
+                    optimizer_grouped_parameters,
+                    lr=self.hparams.learning_rate,
+                    weight_decay=self.hparams.weight_decay
+                )
+                print(f"🦁 Lion Optimizer 사용 (lion-pytorch): lr={self.hparams.learning_rate}")
+        elif self.hparams.optimizer_type == "sam":
+            optimizer = SAM(
+                self.parameters(),
+                torch.optim.AdamW,
+                lr=self.hparams.learning_rate,
+                weight_decay=self.hparams.weight_decay,
+                rho=self.hparams.sam_rho
+            )
+            print(f"🎯 SAM Optimizer 사용: lr={self.hparams.learning_rate}, rho={self.hparams.sam_rho}")
+        else:
+            optimizer = torch.optim.AdamW(
+                optimizer_grouped_parameters,
+                lr=self.hparams.learning_rate,
+                weight_decay=self.hparams.weight_decay
+            )
+            print(f"⚡ AdamW Optimizer 사용: lr={self.hparams.learning_rate}")
         
         # 학습률 스케줄러
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -386,5 +542,10 @@ def create_model(config) -> SigLIPDementiaClassifier:
         weight_decay=config.weight_decay,
         warmup_steps=config.warmup_steps,
         max_epochs=config.num_epochs,
-        use_language_embedding=True  # 언어 무관 학습을 위해 활성화
+        use_language_embedding=True,  # 언어 무관 학습을 위해 활성화
+        loss_type=config.loss_type,
+        focal_alpha=config.focal_alpha,
+        focal_gamma=config.focal_gamma,
+        optimizer_type=config.optimizer_type,
+        sam_rho=config.sam_rho
     ) 

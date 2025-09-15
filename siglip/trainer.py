@@ -174,6 +174,17 @@ def main():
                        choices=["all", "English", "Greek", "Spanish", "Mandarin"],
                        help="사용할 언어 파서 (all: 모든 언어, 개별 언어 선택 가능)")
     parser.add_argument("--languages", nargs="+", default=None, help="특정 언어 목록 (parser=all일 때 사용)")
+    # 손실 함수 선택 옵션
+    parser.add_argument("--loss_type", type=str, default="cross_entropy",
+                       choices=["cross_entropy", "focal", "bce"],
+                       help="손실 함수 타입 (cross_entropy, focal, bce)")
+    parser.add_argument("--focal_alpha", type=float, default=1.0, help="Focal Loss alpha 파라미터")
+    parser.add_argument("--focal_gamma", type=float, default=2.0, help="Focal Loss gamma 파라미터")
+    # 옵티마이저 선택 옵션
+    parser.add_argument("--optimizer_type", type=str, default="adamw",
+                       choices=["adamw", "lion", "sam"],
+                       help="옵티마이저 타입 (adamw, lion, sam)")
+    parser.add_argument("--sam_rho", type=float, default=0.05, help="SAM rho 파라미터")
     
     args = parser.parse_args()
     
@@ -194,6 +205,20 @@ def main():
         config.learning_rate = args.learning_rate
     if args.num_epochs:
         config.num_epochs = args.num_epochs
+    
+    # 손실 함수 설정
+    if args.loss_type:
+        config.loss_type = args.loss_type
+    if args.focal_alpha:
+        config.focal_alpha = args.focal_alpha
+    if args.focal_gamma:
+        config.focal_gamma = args.focal_gamma
+    
+    # 옵티마이저 설정
+    if args.optimizer_type:
+        config.optimizer_type = args.optimizer_type
+    if args.sam_rho:
+        config.sam_rho = args.sam_rho
     
     # 언어 파서 설정
     if args.parser == "all":

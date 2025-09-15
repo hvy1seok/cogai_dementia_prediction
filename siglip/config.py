@@ -21,11 +21,20 @@ class SigLIPConfig:
     fmax: float = 8000.0
     
     # 학습 설정
-    batch_size: int = 16
+    batch_size: int = 32
     learning_rate: float = 2e-5
     num_epochs: int = 10
     warmup_steps: int = 100
     weight_decay: float = 0.01
+    
+    # 손실 함수 설정
+    loss_type: str = "cross_entropy"  # "cross_entropy", "focal", "bce"
+    focal_alpha: float = 1.0          # Focal Loss alpha 파라미터
+    focal_gamma: float = 2.0          # Focal Loss gamma 파라미터
+    
+    # 옵티마이저 설정
+    optimizer_type: str = "adamw"     # "adamw", "lion", "sam"
+    sam_rho: float = 0.05             # SAM rho 파라미터
     
     # 데이터 설정
     train_split: float = 0.8

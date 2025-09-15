@@ -8,7 +8,7 @@ echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 DATA_DIR="../../training_dset"
 OUTPUT_DIR="../modules/outputs/siglip/Greek"
 MODEL_NAME="google/siglip2-base-patch16-naflex"
-BATCH_SIZE=8
+BATCH_SIZE=32
 LEARNING_RATE=2e-5
 NUM_EPOCHS=100
 LANGUAGE="Greek"
