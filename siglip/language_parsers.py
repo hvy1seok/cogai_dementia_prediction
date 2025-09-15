@@ -197,13 +197,21 @@ def get_language_parser(language: str, data_dir: str) -> BaseLanguageParser:
     if language not in parsers:
         raise ValueError(f"지원하지 않는 언어: {language}. 지원 언어: {list(parsers.keys())}")
     
+    print(f"🔧 파서 생성: {language}, 데이터 경로: {data_dir}")
+    
     # English는 특별 처리 (data_dir를 직접 전달)
     if language == 'English':
-        return parsers[language](data_dir)
+        print(f"🔧 영어 파서 생성: {parsers[language].__name__}")
+        parser = parsers[language](data_dir)
+        print(f"🔧 생성된 파서 타입: {type(parser)}")
+        return parser
     else:
         # 다른 언어들은 언어별 하위 디렉토리 전달
         lang_data_dir = os.path.join(data_dir, language)
-        return parsers[language](lang_data_dir)
+        print(f"🔧 {language} 파서 생성: {parsers[language].__name__}, 경로: {lang_data_dir}")
+        parser = parsers[language](lang_data_dir)
+        print(f"🔧 생성된 파서 타입: {type(parser)}")
+        return parser
 
 def parse_all_languages(data_dir: str, languages: List[str] = None) -> List[Dict]:
     """모든 언어 데이터 파싱"""
