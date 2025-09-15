@@ -5,10 +5,10 @@ echo "=== SigLIP2 영어 치매 진단 모델 훈련 시작 ==="
 echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 
 # 설정
-DATA_DIR="../training_dset"
+DATA_DIR="../../training_dset"
 OUTPUT_DIR="../modules/outputs/siglip/English"
 MODEL_NAME="google/siglip2-base-patch16-224"
-BATCH_SIZE=8
+BATCH_SIZE=16
 LEARNING_RATE=2e-5
 NUM_EPOCHS=10
 LANGUAGE="English"
