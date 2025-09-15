@@ -67,7 +67,7 @@ def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
     lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
     
-    return callbacks
+    return callbacks, checkpoint_callback
 
 def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     """모델 훈련"""
@@ -110,7 +110,7 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     
     # 콜백 생성
     print("콜백 생성 중...")
-    callbacks = create_callbacks(training_config, config.checkpoint_dir)
+    callbacks, checkpoint_callback = create_callbacks(training_config, config.checkpoint_dir)
     
     # 훈련 설정
     trainer_kwargs = {
