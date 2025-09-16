@@ -24,6 +24,22 @@ class BaseLanguageParser(ABC):
     def parse_data(self) -> List[Dict]:
         """데이터 파싱"""
         pass
+    
+    def extract_patient_id(self, file_stem: str) -> str:
+        """파일명에서 환자 ID 추출 (기본 구현)"""
+        parts = file_stem.split('_')
+        
+        if len(parts) >= 2:
+            first_part = parts[0]
+            if first_part.isdigit() or (first_part.isalnum() and any(c.isdigit() for c in first_part)):
+                return first_part
+            
+            if len(parts) >= 2:
+                combined = f"{parts[0]}_{parts[1]}"
+                if any(c.isdigit() for c in combined):
+                    return combined
+        
+        return file_stem
 
 class TrainingDatasetParser(BaseLanguageParser):
     """training_dset 폴더 구조용 공통 파서"""
@@ -79,7 +95,8 @@ class TrainingDatasetParser(BaseLanguageParser):
                                 'label': label,
                                 'language': self.language,
                                 'source': f'{self.language}_{category}',
-                                'file_id': txt_file.stem
+                                'file_id': txt_file.stem,
+                                'patient_id': self.extract_patient_id(txt_file.stem)  # 환자 단위 분할용
                             })
                     
                     except Exception as e:
@@ -297,7 +314,8 @@ class GreekParser(BaseLanguageParser):
                                 'label': label,
                                 'language': self.language,
                                 'source': f'{self.language}_{category}',
-                                'file_id': txt_file.stem
+                                'file_id': txt_file.stem,
+                                'patient_id': self.extract_patient_id(txt_file.stem)  # 환자 단위 분할용
                             })
                     
                     except Exception as e:
@@ -386,7 +404,8 @@ class SpanishParser(BaseLanguageParser):
                                 'label': label,
                                 'language': self.language,
                                 'source': f'{self.language}_{category}',
-                                'file_id': txt_file.stem
+                                'file_id': txt_file.stem,
+                                'patient_id': self.extract_patient_id(txt_file.stem)  # 환자 단위 분할용
                             })
                     
                     except Exception as e:
@@ -475,7 +494,8 @@ class MandarinParser(BaseLanguageParser):
                                 'label': label,
                                 'language': self.language,
                                 'source': f'{self.language}_{category}',
-                                'file_id': txt_file.stem
+                                'file_id': txt_file.stem,
+                                'patient_id': self.extract_patient_id(txt_file.stem)  # 환자 단위 분할용
                             })
                     
                     except Exception as e:

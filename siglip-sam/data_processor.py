@@ -206,48 +206,112 @@ class DementiaDataset(Dataset):
 
 def create_stratified_split(dataset, train_split: float = 0.7, val_split: float = 0.1, test_split: float = 0.2, random_seed: int = 42):
     """
-    언어별 + 라벨별 비율을 유지하면서 stratified split 수행 (train:val:test = 7:1:2)
+    환자 단위 + 언어별 + 라벨별 비율을 유지하면서 stratified split 수행 (train:val:test = 7:1:2)
+    Speaker-independent evaluation을 위해 동일 환자의 모든 샘플이 한 세트에만 존재하도록 보장
     """
-    # 데이터에서 언어와 라벨 정보 추출
+    # 데이터에서 환자, 언어, 라벨 정보 추출
+    patients = []
     languages = []
     labels = []
     
     for i in range(len(dataset)):
         item = dataset.data[i]
+        patients.append(item.get('patient_id', item['file_id']))  # 환자 ID, 없으면 file_id 사용
         languages.append(item['language'])
         labels.append(item['label'])
     
-    # 언어-라벨 조합으로 stratify 키 생성
-    stratify_keys = [f"{lang}_{label}" for lang, label in zip(languages, labels)]
+    # 환자별로 그룹화
+    from collections import defaultdict
+    patient_groups = defaultdict(list)
+    for i, patient_id in enumerate(patients):
+        patient_groups[patient_id].append(i)
     
-    # 전체 인덱스 생성
-    indices = list(range(len(dataset)))
+    print(f"\n👥 환자 단위 분할:")
+    print(f"  전체 환자 수: {len(patient_groups)}")
+    print(f"  전체 샘플 수: {len(dataset)}")
     
-    # 첫 번째 분할: train vs (val + test)
-    train_indices, temp_indices = train_test_split(
-        indices,
+    # 환자별 메타데이터 생성
+    patient_metadata = []
+    for patient_id, indices in patient_groups.items():
+        first_idx = indices[0]
+        patient_lang = languages[first_idx]
+        patient_label = labels[first_idx]
+        sample_count = len(indices)
+        
+        patient_metadata.append({
+            'patient_id': patient_id,
+            'language': patient_lang,
+            'label': patient_label,
+            'indices': indices,
+            'sample_count': sample_count
+        })
+    
+    # 환자 단위로 stratify 키 생성 (언어-라벨 조합)
+    patient_stratify_keys = [f"{p['language']}_{p['label']}" for p in patient_metadata]
+    patient_indices_list = list(range(len(patient_metadata)))
+    
+    # 환자 단위로 분할 수행
+    from sklearn.model_selection import train_test_split
+    
+    # 첫 번째 분할: train vs (val + test) - 환자 단위
+    train_patient_indices, temp_patient_indices = train_test_split(
+        patient_indices_list,
         test_size=val_split + test_split,
-        stratify=stratify_keys,
+        stratify=patient_stratify_keys,
         random_state=random_seed
     )
     
-    # temp 데이터의 stratify 키 생성
-    temp_stratify_keys = [stratify_keys[i] for i in temp_indices]
+    # temp 환자들의 stratify 키 생성
+    temp_patient_stratify_keys = [patient_stratify_keys[i] for i in temp_patient_indices]
     
-    # 두 번째 분할: val vs test
-    val_indices, test_indices = train_test_split(
-        temp_indices,
+    # 두 번째 분할: val vs test - 환자 단위
+    val_patient_indices, test_patient_indices = train_test_split(
+        temp_patient_indices,
         test_size=test_split / (val_split + test_split),  # test 비율 조정
-        stratify=temp_stratify_keys,
+        stratify=temp_patient_stratify_keys,
         random_state=random_seed
     )
     
-    # 분할 결과 통계 출력
-    print(f"\n📊 Stratified Split 결과 (7:1:2):")
-    print(f"  전체 데이터: {len(dataset)} 샘플")
-    print(f"  훈련 데이터: {len(train_indices)} 샘플 ({len(train_indices)/len(dataset)*100:.1f}%)")
-    print(f"  검증 데이터: {len(val_indices)} 샘플 ({len(val_indices)/len(dataset)*100:.1f}%)")
-    print(f"  테스트 데이터: {len(test_indices)} 샘플 ({len(test_indices)/len(dataset)*100:.1f}%)")
+    # 환자 인덱스를 샘플 인덱스로 변환
+    train_indices = []
+    val_indices = []
+    test_indices = []
+    
+    for patient_idx in train_patient_indices:
+        train_indices.extend(patient_metadata[patient_idx]['indices'])
+    
+    for patient_idx in val_patient_indices:
+        val_indices.extend(patient_metadata[patient_idx]['indices'])
+    
+    for patient_idx in test_patient_indices:
+        test_indices.extend(patient_metadata[patient_idx]['indices'])
+    
+    # 분할 결과 통계 출력 (환자 단위 포함)
+    print(f"\n📊 환자 단위 Stratified Split 결과 (7:1:2):")
+    print(f"  전체 데이터: {len(dataset)} 샘플, {len(patient_groups)} 환자")
+    print(f"  훈련 데이터: {len(train_indices)} 샘플 ({len(train_indices)/len(dataset)*100:.1f}%), {len(train_patient_indices)} 환자")
+    print(f"  검증 데이터: {len(val_indices)} 샘플 ({len(val_indices)/len(dataset)*100:.1f}%), {len(val_patient_indices)} 환자")
+    print(f"  테스트 데이터: {len(test_indices)} 샘플 ({len(test_indices)/len(dataset)*100:.1f}%), {len(test_patient_indices)} 환자")
+    
+    # 환자 분할 검증: 중복 확인
+    train_patients = set([patient_metadata[i]['patient_id'] for i in train_patient_indices])
+    val_patients = set([patient_metadata[i]['patient_id'] for i in val_patient_indices])
+    test_patients = set([patient_metadata[i]['patient_id'] for i in test_patient_indices])
+    
+    overlap_train_val = train_patients & val_patients
+    overlap_train_test = train_patients & test_patients
+    overlap_val_test = val_patients & test_patients
+    
+    if overlap_train_val or overlap_train_test or overlap_val_test:
+        print(f"⚠️ 환자 중복 발견!")
+        if overlap_train_val:
+            print(f"   Train-Val 중복: {overlap_train_val}")
+        if overlap_train_test:
+            print(f"   Train-Test 중복: {overlap_train_test}")
+        if overlap_val_test:
+            print(f"   Val-Test 중복: {overlap_val_test}")
+    else:
+        print(f"✅ 환자 단위 분할 성공: 중복 없음")
     
     # 훈련/검증/테스트 세트의 언어별 분포 확인
     train_lang_dist = Counter([languages[i] for i in train_indices])

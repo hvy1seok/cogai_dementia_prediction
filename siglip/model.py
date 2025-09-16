@@ -134,9 +134,9 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         
         # SigLIP2 모델 로드 (사전훈련 가중치 사용)
         print("🔄 SigLIP2 모델 로드 시도...")
-        self.siglip = AutoModel.from_pretrained(model_name)
-        print(f"✅ SigLIP2 모델 로드 성공! 타입: {type(self.siglip)}")
-        print(f"📊 모델 크기: {self.siglip.config.vision_config.hidden_size if hasattr(self.siglip.config, 'vision_config') else '알 수 없음'}")
+        self.siglip_model = AutoModel.from_pretrained(model_name)
+        print(f"✅ SigLIP2 모델 로드 성공! 타입: {type(self.siglip_model)}")
+        print(f"📊 모델 크기: {self.siglip_model.config.vision_config.hidden_size if hasattr(self.siglip_model.config, 'vision_config') else '알 수 없음'}")
         
         # SigLIP2는 네이티브 다국어 지원 - 추가 언어 임베딩 선택적 사용
         if use_language_embedding:
@@ -206,7 +206,7 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         if spatial_shapes is not None:
             model_inputs['spatial_shapes'] = spatial_shapes
             
-        outputs = self.siglip(**model_inputs)
+        outputs = self.siglip_model(**model_inputs)
         
         # SigLIP2의 멀티모달 특징 추출 (고정 차원 사용)
         if hasattr(outputs, 'image_embeds') and hasattr(outputs, 'text_embeds'):
