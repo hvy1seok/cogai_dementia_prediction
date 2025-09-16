@@ -16,7 +16,7 @@ LANGUAGES="English Greek Spanish Mandarin"
 
 # 실험 조합 정의
 declare -a LOSS_TYPES=("cross_entropy" "focal" "bce")
-declare -a OPTIMIZERS=("adamw" "lion" "sam")
+declare -a OPTIMIZERS=("adamw" "lion" "sam")  # SAM은 Enhanced AdamW로 대체됨
 
 # 손실 함수 이름 매핑
 declare -A LOSS_NAMES
@@ -28,7 +28,7 @@ LOSS_NAMES["bce"]="BCE"
 declare -A OPT_NAMES
 OPT_NAMES["adamw"]="AdamW"
 OPT_NAMES["lion"]="Lion"
-OPT_NAMES["sam"]="SAM"
+OPT_NAMES["sam"]="EnhancedAdamW"  # SAM은 Enhanced AdamW로 대체
 
 # Python 명령어 확인
 PYTHON_CMD=""

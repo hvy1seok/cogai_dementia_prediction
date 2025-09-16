@@ -15,7 +15,7 @@ $LANGUAGES = @("English", "Greek", "Spanish", "Mandarin")
 
 # 실험 조합 정의
 $LOSS_TYPES = @("cross_entropy", "focal", "bce")
-$OPTIMIZERS = @("adamw", "lion", "sam")
+$OPTIMIZERS = @("adamw", "lion", "sam")  # SAM은 Enhanced AdamW로 대체됨
 
 # 손실 함수 이름 매핑
 $LOSS_NAMES = @{
@@ -28,7 +28,7 @@ $LOSS_NAMES = @{
 $OPT_NAMES = @{
     "adamw" = "AdamW"
     "lion" = "Lion"
-    "sam" = "SAM"
+    "sam" = "EnhancedAdamW"  # SAM은 Enhanced AdamW로 대체
 }
 
 # Python 명령어 확인

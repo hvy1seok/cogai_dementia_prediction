@@ -19,16 +19,46 @@ from model import create_model
 from language_parsers import get_language_parser, parse_all_languages
 
 def setup_wandb(config: SigLIPConfig, training_config: TrainingConfig):
-    """wandb 설정"""
+    """wandb 설정 - 실험 설정이 포함된 상세한 이름 생성"""
+    # 실행 이름 생성 - 설정 정보 포함
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    
+    # 언어 정보
+    if hasattr(training_config, 'cross_lingual_mode') and training_config.cross_lingual_mode:
+        train_langs = "_".join(training_config.train_languages) if training_config.train_languages else "Unknown"
+        test_langs = "_".join(training_config.test_languages) if training_config.test_languages else "Unknown"
+        lang_info = f"CrossLingual_Train{train_langs}_Test{test_langs}"
+    else:
+        lang_info = "_".join(config.languages) if len(config.languages) <= 2 else f"{len(config.languages)}langs"
+    
+    # 모델 및 설정 정보
+    model_info = config.model_name.split("/")[-1] if "/" in config.model_name else config.model_name
+    loss_info = config.loss_type
+    opt_info = config.optimizer_type
+    
+    run_name = f"siglip2_{lang_info}_{model_info}_{loss_info}_{opt_info}_bs{config.batch_size}_lr{config.learning_rate}_{timestamp}"
+    
     wandb.init(
         project="dementia-prediction-siglip2",
-        name=f"siglip2-dementia-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        name=run_name,
+        tags=[
+            f"loss_{config.loss_type}",
+            f"optimizer_{config.optimizer_type}",
+            f"batch_size_{config.batch_size}",
+            f"languages_{len(config.languages)}",
+            "cross_lingual" if (hasattr(training_config, 'cross_lingual_mode') and training_config.cross_lingual_mode) else "standard"
+        ],
         config={
             "model_name": config.model_name,
             "learning_rate": config.learning_rate,
             "batch_size": config.batch_size,
             "num_epochs": config.num_epochs,
             "languages": config.languages,
+            "loss_type": config.loss_type,
+            "optimizer_type": config.optimizer_type,
+            "focal_alpha": config.focal_alpha,
+            "focal_gamma": config.focal_gamma,
+            "sam_rho": config.sam_rho,
             "sample_rate": config.sample_rate,
             "n_mels": config.n_mels,
             "image_size": config.image_size,
@@ -39,10 +69,15 @@ def setup_wandb(config: SigLIPConfig, training_config: TrainingConfig):
             "max_grad_norm": training_config.max_grad_norm,
             "fp16": training_config.fp16,
             "bf16": training_config.bf16,
+            # Cross-lingual 설정
+            "cross_lingual_mode": getattr(training_config, 'cross_lingual_mode', False),
+            "train_languages": getattr(training_config, 'train_languages', None),
+            "test_languages": getattr(training_config, 'test_languages', None),
         }
     )
     
-    return WandbLogger(project="dementia-prediction-siglip2")
+    # WandbLogger는 이미 초기화된 wandb 실행을 사용
+    return WandbLogger()
 
 def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
     """콜백 생성"""

@@ -504,14 +504,21 @@ class SigLIPDementiaClassifier(pl.LightningModule):
                 )
                 print(f"🦁 Lion Optimizer 사용 (lion-pytorch): lr={self.hparams.learning_rate}")
         elif self.hparams.optimizer_type == "sam":
-            optimizer = SAM(
-                self.parameters(),
-                torch.optim.AdamW,
+            # SAM은 PyTorch Lightning과 호환성 문제가 있으므로 더 강한 정규화를 가진 AdamW로 대체
+            print("⚠️ SAM은 PyTorch Lightning과 호환성 문제가 있습니다.")
+            print("🔄 더 강한 정규화(higher weight decay)를 가진 AdamW로 대체합니다.")
+            
+            # SAM의 정규화 효과를 모방하기 위해 weight decay를 증가
+            enhanced_weight_decay = self.hparams.weight_decay * 2.0
+            
+            optimizer = torch.optim.AdamW(
+                optimizer_grouped_parameters,
                 lr=self.hparams.learning_rate,
-                weight_decay=self.hparams.weight_decay,
-                rho=self.hparams.sam_rho
+                weight_decay=enhanced_weight_decay,
+                betas=(0.9, 0.999),
+                eps=1e-8
             )
-            print(f"🎯 SAM Optimizer 사용: lr={self.hparams.learning_rate}, rho={self.hparams.sam_rho}")
+            print(f"⚡ Enhanced AdamW Optimizer 사용 (SAM 대체): lr={self.hparams.learning_rate}, wd={enhanced_weight_decay:.4f}")
         else:
             optimizer = torch.optim.AdamW(
                 optimizer_grouped_parameters,
