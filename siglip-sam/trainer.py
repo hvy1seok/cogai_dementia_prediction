@@ -13,7 +13,9 @@ from torch.cuda.amp import GradScaler, autocast
 import wandb
 import numpy as np
 from datetime import datetime
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score, roc_curve, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 from transformers import AutoProcessor
 from typing import Dict, List
 
@@ -103,6 +105,121 @@ def compute_metrics(predictions, labels):
         'f1': f1,
         'auc': auc
     }
+
+def plot_roc_curve(predictions, labels, title="ROC Curve", save_path=None):
+    """ROC 곡선을 그리고 wandb에 로깅"""
+    plt.style.use('default')
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    try:
+        # 확률값 추출 (이진 분류의 positive class 확률)
+        if len(predictions.shape) > 1:
+            probs = torch.softmax(torch.tensor(predictions), dim=1)[:, 1].numpy()
+        else:
+            probs = predictions
+        
+        # ROC 곡선 계산
+        if len(np.unique(labels)) > 1:
+            fpr, tpr, thresholds = roc_curve(labels, probs)
+            auc_score = roc_auc_score(labels, probs)
+            
+            # ROC 곡선 그리기
+            ax.plot(fpr, tpr, color='darkorange', lw=2, 
+                    label=f'ROC curve (AUC = {auc_score:.3f})')
+            ax.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', 
+                    label='Random classifier')
+            
+            ax.set_xlim([0.0, 1.0])
+            ax.set_ylim([0.0, 1.05])
+            ax.set_xlabel('False Positive Rate', fontsize=12)
+            ax.set_ylabel('True Positive Rate', fontsize=12)
+            ax.set_title(f'{title} (AUC = {auc_score:.3f})', fontsize=14, fontweight='bold')
+            ax.legend(loc="lower right", fontsize=10)
+            ax.grid(True, alpha=0.3)
+            
+            # 최적 임계값 표시
+            optimal_idx = np.argmax(tpr - fpr)
+            optimal_threshold = thresholds[optimal_idx]
+            ax.plot(fpr[optimal_idx], tpr[optimal_idx], 'ro', markersize=8, 
+                    label=f'Optimal threshold = {optimal_threshold:.3f}')
+            ax.legend(loc="lower right", fontsize=10)
+            
+            print(f"📊 ROC 곡선 생성 완료: AUC = {auc_score:.3f}")
+            
+        else:
+            ax.text(0.5, 0.5, 'Cannot plot ROC curve\n(only one class present)', 
+                    ha='center', va='center', fontsize=14)
+            ax.set_xlim([0, 1])
+            ax.set_ylim([0, 1])
+            ax.set_xlabel('False Positive Rate')
+            ax.set_ylabel('True Positive Rate')
+            ax.set_title(title)
+            print("⚠️ ROC 곡선 생성 불가: 단일 클래스만 존재")
+        
+        plt.tight_layout()
+        
+        # 저장
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"💾 ROC 곡선 저장: {save_path}")
+        
+        # wandb에 로깅
+        if wandb.run is not None:
+            wandb.log({f"{title.lower().replace(' ', '_')}_plot": wandb.Image(fig)})
+            print(f"📊 ROC 곡선 wandb 업로드: {title}")
+        
+        plt.close(fig)
+        return fig
+        
+    except Exception as e:
+        print(f"❌ ROC 곡선 생성 오류: {e}")
+        plt.close(fig)
+        return None
+
+def plot_confusion_matrix(predictions, labels, title="Confusion Matrix", save_path=None):
+    """Confusion Matrix를 그리고 wandb에 로깅"""
+    try:
+        # 예측값 변환
+        if len(predictions.shape) > 1:
+            preds = np.argmax(predictions, axis=1)
+        else:
+            preds = (predictions > 0.5).astype(int)
+        
+        # Confusion Matrix 계산
+        cm = confusion_matrix(labels, preds)
+        
+        # 그래프 그리기
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                   xticklabels=['Normal', 'Dementia'], 
+                   yticklabels=['Normal', 'Dementia'])
+        plt.title(f'{title}', fontsize=14, fontweight='bold')
+        plt.ylabel('True Label', fontsize=12)
+        plt.xlabel('Predicted Label', fontsize=12)
+        plt.tight_layout()
+        
+        # 저장
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"📊 Confusion Matrix 저장: {save_path}")
+        
+        # wandb에 로깅
+        if wandb.run is not None:
+            wandb.log({f"{title.lower().replace(' ', '_')}_plot": wandb.Image(plt.gcf())})
+            print(f"📊 Confusion Matrix wandb 업로드: {title}")
+        
+        plt.close()
+        
+        # 분류 리포트 출력
+        accuracy = np.trace(cm) / np.sum(cm)
+        print(f"📊 {title} 요약:")
+        print(f"   정확도: {accuracy:.4f}")
+        print(f"   정상 → 정상: {cm[0,0]}, 정상 → 치매: {cm[0,1]}")
+        print(f"   치매 → 정상: {cm[1,0]}, 치매 → 치매: {cm[1,1]}")
+        
+    except Exception as e:
+        print(f"❌ Confusion Matrix 생성 오류: {e}")
+        plt.close()
 
 def train_epoch(model, train_loader, optimizer, config, scaler=None):
     """한 에포크 훈련"""
@@ -230,6 +347,28 @@ def evaluate(model, test_loader, config):
     avg_loss = total_loss / len(test_loader)
     metrics = compute_metrics(np.array(all_predictions), np.array(all_labels))
     
+    # ROC 곡선 그리기 및 wandb 업로드
+    try:
+        plot_roc_curve(
+            predictions=np.array(all_predictions), 
+            labels=np.array(all_labels), 
+            title="Test ROC Curve",
+            save_path=os.path.join(config.output_dir, "test_roc_curve.png")
+        )
+    except Exception as e:
+        print(f"⚠️ ROC 곡선 생성 실패: {e}")
+    
+    # Confusion Matrix 그리기 및 wandb 업로드
+    try:
+        plot_confusion_matrix(
+            predictions=np.array(all_predictions), 
+            labels=np.array(all_labels), 
+            title="Test Confusion Matrix",
+            save_path=os.path.join(config.output_dir, "test_confusion_matrix.png")
+        )
+    except Exception as e:
+        print(f"⚠️ Confusion Matrix 생성 실패: {e}")
+    
     return avg_loss, metrics
 
 def save_checkpoint(model, optimizer, epoch, metrics, config, is_best=False):
@@ -354,6 +493,34 @@ def train_model(config: SigLIPSAMConfig):
     print(f"🏆 베스트 AUC: {best_auc:.4f}")
     print(f"💾 베스트 모델: {best_model_path}")
     
+    # 최종 테스트 (베스트 모델 로드해서 최종 평가)
+    if best_model_path and os.path.exists(best_model_path):
+        print("\n🔍 베스트 모델로 최종 평가 수행...")
+        try:
+            # 베스트 모델 로드
+            checkpoint = torch.load(best_model_path, map_location=device)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            
+            # 최종 테스트
+            final_test_loss, final_test_metrics = evaluate(model, test_loader, config)
+            
+            # 최종 결과 wandb 로깅
+            wandb.log({
+                'final_test_loss': final_test_loss,
+                'final_test_accuracy': final_test_metrics['accuracy'],
+                'final_test_f1': final_test_metrics['f1'],
+                'final_test_auc': final_test_metrics['auc'],
+            })
+            
+            print(f"🎯 최종 테스트 결과:")
+            print(f"   Loss: {final_test_loss:.4f}")
+            print(f"   Accuracy: {final_test_metrics['accuracy']:.4f}")
+            print(f"   F1: {final_test_metrics['f1']:.4f}")
+            print(f"   AUC: {final_test_metrics['auc']:.4f}")
+            
+        except Exception as e:
+            print(f"⚠️ 최종 평가 실패: {e}")
+    
     # wandb 종료
     wandb.finish()
     
@@ -466,6 +633,13 @@ def main():
     print(f"데이터 디렉토리: {config.data_dir}")
     print(f"옵티마이저: {config.optimizer_type}")
     print(f"손실 함수: {config.loss_type}")
+    
+    # 경로 디버깅
+    print(f"\n🔍 경로 디버깅:")
+    print(f"  현재 작업 디렉토리: {os.getcwd()}")
+    print(f"  config.data_dir: {config.data_dir}")
+    print(f"  절대 경로: {os.path.abspath(config.data_dir)}")
+    print(f"  경로 존재 여부: {os.path.exists(config.data_dir)}")
     
     # 디렉토리 생성
     os.makedirs(config.output_dir, exist_ok=True)

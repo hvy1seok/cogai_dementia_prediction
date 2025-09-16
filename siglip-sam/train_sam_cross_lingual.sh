@@ -6,7 +6,7 @@ echo "=== SigLIP-SAM Cross-Lingual 치매 진단 모델 훈련 시작 ==="
 echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 
 # 설정
-DATA_DIR="../training_dset"
+DATA_DIR="../../training_dset"
 OUTPUT_DIR="../modules/outputs/siglip-sam/CrossLingual_Train_English_Spanish_Mandarin_Test_Greek_SAM"
 MODEL_NAME="google/siglip2-base-patch16-naflex"
 BATCH_SIZE=32
