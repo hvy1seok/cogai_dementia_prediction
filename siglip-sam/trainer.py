@@ -9,7 +9,7 @@ import time
 import argparse
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 import wandb
 import numpy as np
 from datetime import datetime
@@ -236,42 +236,42 @@ def train_epoch(model, train_loader, optimizer, config, scaler=None):
         
         # SAM 옵티마이저 사용 시
         if config.optimizer_type == "sam":
-            # 첫 번째 forward pass
-            def closure():
-                if scaler and config.mixed_precision:
-                    with autocast():
-                        logits = model(batch)
-                        loss = model.compute_loss(logits, batch['labels'])
-                    scaler.scale(loss).backward()
-                else:
-                    logits = model(batch)
-                    loss = model.compute_loss(logits, batch['labels'])
-                    loss.backward()
-                return loss
-            
-            # SAM first step
             if scaler and config.mixed_precision:
-                with autocast():
+                # Mixed precision + SAM
+                # 첫 번째 forward pass
+                with autocast('cuda'):
                     logits = model(batch)
                     loss = model.compute_loss(logits, batch['labels'])
+                
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
                 optimizer.first_step(zero_grad=True)
                 
-                # 두 번째 forward pass
-                closure()
+                # 두 번째 forward pass (새로운 scaler 스텝)
+                with autocast('cuda'):
+                    logits = model(batch)
+                    loss = model.compute_loss(logits, batch['labels'])
+                
+                scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
                 optimizer.second_step(zero_grad=True)
                 scaler.update()
+                
             else:
+                # No mixed precision + SAM
+                # 첫 번째 forward pass
                 logits = model(batch)
                 loss = model.compute_loss(logits, batch['labels'])
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
                 optimizer.first_step(zero_grad=True)
                 
                 # 두 번째 forward pass
-                closure()
+                logits = model(batch)
+                loss = model.compute_loss(logits, batch['labels'])
+                loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
                 optimizer.second_step(zero_grad=True)
         
@@ -280,7 +280,7 @@ def train_epoch(model, train_loader, optimizer, config, scaler=None):
             optimizer.zero_grad()
             
             if scaler and config.mixed_precision:
-                with autocast():
+                with autocast('cuda'):
                     logits = model(batch)
                     loss = model.compute_loss(logits, batch['labels'])
                 
@@ -331,7 +331,7 @@ def evaluate(model, test_loader, config):
                     batch[key] = batch[key].to(config.device)
             
             if config.mixed_precision:
-                with autocast():
+                with autocast('cuda'):
                     logits = model(batch)
                     loss = model.compute_loss(logits, batch['labels'])
             else:
@@ -440,7 +440,7 @@ def train_model(config: SigLIPSAMConfig):
     scheduler = model.create_scheduler(optimizer, config, total_steps)
     
     # Mixed precision 스케일러
-    scaler = GradScaler() if config.mixed_precision else None
+    scaler = GradScaler('cuda') if config.mixed_precision else None
     
     # wandb 설정
     setup_wandb(config)
@@ -498,7 +498,7 @@ def train_model(config: SigLIPSAMConfig):
         print("\n🔍 베스트 모델로 최종 평가 수행...")
         try:
             # 베스트 모델 로드
-            checkpoint = torch.load(best_model_path, map_location=device)
+            checkpoint = torch.load(best_model_path, map_location=config.device)
             model.load_state_dict(checkpoint['model_state_dict'])
             
             # 최종 테스트
