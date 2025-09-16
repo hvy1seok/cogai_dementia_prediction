@@ -147,11 +147,28 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             self.language_embedding = None
             self.language_projection = None
         
-        # 분류 헤드 - SigLIP2의 실제 출력 차원에 맞춤
-        # SigLIP2의 출력은 dynamic하므로 실행 시점에서 결정
-        # 일단 placeholder로 설정하고 첫 번째 forward에서 재조정
-        self.classifier = None  # 동적으로 생성될 예정
-        self.hidden_size_detected = False
+        # 분류 헤드 - SigLIP2의 hidden_size는 config에서 미리 알 수 있음
+        # SigLIP2 모델의 config에서 hidden_size 추출
+        if hasattr(self.siglip_model.config, 'hidden_size'):
+            actual_hidden_size = self.siglip_model.config.hidden_size
+        elif hasattr(self.siglip_model.config, 'vision_config') and hasattr(self.siglip_model.config.vision_config, 'hidden_size'):
+            actual_hidden_size = self.siglip_model.config.vision_config.hidden_size
+        else:
+            # 폴백: 일반적인 SigLIP2 hidden_size
+            actual_hidden_size = 768
+        
+        print(f"📐 Hidden size: {actual_hidden_size}")
+        
+        # 분류기 미리 생성 (동적 생성 문제 해결)
+        self.classifier = nn.Sequential(
+            nn.Linear(actual_hidden_size, actual_hidden_size // 2),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(actual_hidden_size // 2, self.hparams.num_classes)
+        )
+        
+        self.hidden_size_detected = True
+        self.actual_hidden_size = actual_hidden_size
         
         # 언어 ID 매핑
         self.language_to_id = {
@@ -203,15 +220,19 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         
         # logits_per_image는 가변 차원이므로 사용하지 않음!
         
-        # 이제 고정 차원을 사용하므로 분류기 한 번만 생성
-        if self.classifier is None:
-            actual_hidden_size = multimodal_embeddings.shape[-1]
-            self.classifier = nn.Sequential(
-                nn.Linear(actual_hidden_size, actual_hidden_size // 2),
-                nn.ReLU(),
-                nn.Dropout(0.1),
-                nn.Linear(actual_hidden_size // 2, self.hparams.num_classes)
-            ).to(multimodal_embeddings.device)
+        # 차원 검증 (디버깅용)
+        expected_size = self.actual_hidden_size
+        actual_size = multimodal_embeddings.shape[-1]
+        if actual_size != expected_size:
+            print(f"⚠️ 차원 불일치: 예상 {expected_size}, 실제 {actual_size}")
+            # 차원 조정이 필요한 경우 처리
+            if actual_size > expected_size:
+                multimodal_embeddings = multimodal_embeddings[:, :expected_size]
+            elif actual_size < expected_size:
+                # 패딩 또는 projection 필요
+                padding = torch.zeros(multimodal_embeddings.shape[0], expected_size - actual_size, 
+                                    device=multimodal_embeddings.device)
+                multimodal_embeddings = torch.cat([multimodal_embeddings, padding], dim=1)
         
         # 언어 임베딩은 SigLIP2 네이티브 다국어 능력으로 대체
         

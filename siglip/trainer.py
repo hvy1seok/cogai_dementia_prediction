@@ -196,9 +196,13 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     best_model_path = checkpoint_callback.best_model_path
     if best_model_path and os.path.exists(best_model_path):
         print(f"✅ 베스트 모델 경로: {best_model_path}")
-        # 베스트 모델 로드
-        model = SigLIPDementiaClassifier.load_from_checkpoint(best_model_path)
-        print("🏆 베스트 AUC 모델로 테스트 실행...")
+        try:
+            # 베스트 모델 로드 (classifier가 미리 생성되므로 정상 로드 가능)
+            model = SigLIPDementiaClassifier.load_from_checkpoint(best_model_path)
+            print("🏆 베스트 AUC 모델로 테스트 실행...")
+        except Exception as e:
+            print(f"⚠️ 베스트 모델 로드 실패: {e}")
+            print("⚠️ 현재 모델로 테스트를 계속합니다.")
     else:
         print("⚠️ 베스트 모델을 찾을 수 없습니다. 마지막 모델로 테스트합니다.")
     
