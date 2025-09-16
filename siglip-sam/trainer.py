@@ -364,7 +364,7 @@ def main():
     parser = argparse.ArgumentParser(description="SigLIP-SAM 치매 진단 모델 훈련")
     
     # 기본 설정
-    parser.add_argument("--data_dir", type=str, default="../training_dset", help="데이터 디렉토리")
+    parser.add_argument("--data_dir", type=str, default="../../training_dset", help="데이터 디렉토리")
     parser.add_argument("--output_dir", type=str, default="../modules/outputs/siglip-sam", help="출력 디렉토리")
     parser.add_argument("--model_name", type=str, default="google/siglip2-base-patch16-naflex", help="모델 이름")
     parser.add_argument("--batch_size", type=int, default=32, help="배치 크기")

@@ -20,7 +20,7 @@ TEST_LANGUAGES=("Greek")
 # SAM 설정
 OPTIMIZER_TYPE="sam"
 SAM_RHO=0.05
-LOSS_TYPE="cross_entropy"
+LOSS_TYPE="focal"
 
 # 출력 디렉토리 생성
 mkdir -p "$OUTPUT_DIR"

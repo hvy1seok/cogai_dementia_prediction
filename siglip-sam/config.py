@@ -31,7 +31,7 @@ class SigLIPSAMConfig:
     weight_decay: float = 0.01
     
     # 손실 함수 설정
-    loss_type: str = "cross_entropy"  # "cross_entropy", "focal", "bce"
+    loss_type: str = "focal"  # "cross_entropy", "focal", "bce"
     focal_alpha: float = 1.0          # Focal Loss alpha 파라미터
     focal_gamma: float = 2.0          # Focal Loss gamma 파라미터
     
@@ -46,7 +46,7 @@ class SigLIPSAMConfig:
     random_seed: int = 42
     
     # 경로 설정
-    data_dir: str = "../training_dset"
+    data_dir: str = "../../training_dset"
     output_dir: str = "../modules/outputs/siglip-sam"
     checkpoint_dir: str = "../modules/outputs/siglip-sam/checkpoints"
     
