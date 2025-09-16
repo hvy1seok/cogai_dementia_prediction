@@ -89,12 +89,21 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     
     # 데이터로더 생성
     print("데이터로더 생성 중...")
+    
+    # Cross-lingual 모드 확인
+    cross_lingual_mode = hasattr(training_config, 'cross_lingual_mode') and training_config.cross_lingual_mode
+    train_languages = getattr(training_config, 'train_languages', None)
+    test_languages = getattr(training_config, 'test_languages', None)
+    
     train_loader, test_loader = create_dataloaders(
         data_dir=config.data_dir,
         processor=processor,
         config=config,
         train_split=0.8,
-        test_split=0.2
+        test_split=0.2,
+        cross_lingual_mode=cross_lingual_mode,
+        train_languages=train_languages,
+        test_languages=test_languages
     )
     
     print(f"훈련 데이터: {len(train_loader.dataset)} 샘플")
@@ -171,9 +180,14 @@ def main():
     parser.add_argument("--num_epochs", type=int, default=10, help="에포크 수")
     # 언어별 파서 선택 옵션
     parser.add_argument("--parser", type=str, default="all", 
-                       choices=["all", "English", "Greek", "Spanish", "Mandarin"],
-                       help="사용할 언어 파서 (all: 모든 언어, 개별 언어 선택 가능)")
+                       choices=["all", "English", "Greek", "Spanish", "Mandarin", "cross_lingual"],
+                       help="사용할 언어 파서 (all: 모든 언어, 개별 언어 선택 가능, cross_lingual: 언어 간 일반화 테스트)")
     parser.add_argument("--languages", nargs="+", default=None, help="특정 언어 목록 (parser=all일 때 사용)")
+    # Cross-lingual 모드 옵션
+    parser.add_argument("--train_languages", nargs="+", default=["English", "Spanish", "Mandarin"],
+                       help="Cross-lingual 모드에서 훈련에 사용할 언어들")
+    parser.add_argument("--test_languages", nargs="+", default=["Greek"],
+                       help="Cross-lingual 모드에서 테스트에 사용할 언어들")
     # 손실 함수 선택 옵션
     parser.add_argument("--loss_type", type=str, default="cross_entropy",
                        choices=["cross_entropy", "focal", "bce"],
@@ -221,7 +235,27 @@ def main():
         config.sam_rho = args.sam_rho
     
     # 언어 파서 설정
-    if args.parser == "all":
+    if args.parser == "cross_lingual":
+        # Cross-lingual 모드
+        training_config.cross_lingual_mode = True
+        training_config.train_languages = args.train_languages
+        training_config.test_languages = args.test_languages
+        
+        # 출력 디렉토리 이름 업데이트
+        train_langs_str = "_".join(args.train_languages)
+        test_langs_str = "_".join(args.test_languages)
+        config.output_dir = f"{config.output_dir}/CrossLingual_Train_{train_langs_str}_Test_{test_langs_str}"
+        config.checkpoint_dir = f"{config.output_dir}/checkpoints"
+        
+        print("🌍 Cross-Lingual 모드 활성화")
+        print(f"  훈련 언어: {args.train_languages}")
+        print(f"  테스트 언어: {args.test_languages}")
+        print(f"  출력 디렉토리: {config.output_dir}")
+        
+        # config.languages는 모든 언어 포함 (데이터 확인용)
+        config.languages = args.train_languages + args.test_languages
+        
+    elif args.parser == "all":
         if args.languages:
             config.languages = args.languages
         else:

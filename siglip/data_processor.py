@@ -251,8 +251,11 @@ def create_dataloaders(data_dir: str,
                       processor: AutoProcessor,  # SigLIP2 지원
                       config,
                       train_split: float = 0.8,
-                      test_split: float = 0.2) -> Tuple[DataLoader, DataLoader]:
-    """데이터로더 생성"""
+                      test_split: float = 0.2,
+                      cross_lingual_mode: bool = False,
+                      train_languages: List[str] = None,
+                      test_languages: List[str] = None) -> Tuple[DataLoader, DataLoader]:
+    """데이터로더 생성 (일반 모드 또는 Cross-Lingual 모드)"""
     
     audio_processor = AudioToMelSpectrogram(
         sample_rate=config.sample_rate,
@@ -264,26 +267,60 @@ def create_dataloaders(data_dir: str,
         image_size=config.image_size
     )
     
-    # 전체 데이터셋 생성
-    full_dataset = DementiaDataset(
-        data_dir=data_dir,
-        processor=processor,
-        audio_processor=audio_processor,
-        max_length=config.max_length,
-        languages=config.languages
-    )
-    
-    # Stratified 데이터 분할 (언어별 + 라벨별 비율 유지)
-    print("🎯 Stratified Split 수행 중...")
-    train_indices, test_indices = create_stratified_split(
-        full_dataset, 
-        train_split=train_split,
-        random_seed=config.random_seed
-    )
-    
-    # Subset으로 데이터셋 분할
-    train_dataset = Subset(full_dataset, train_indices)
-    test_dataset = Subset(full_dataset, test_indices)
+    if cross_lingual_mode:
+        print("🌍 Cross-Lingual 모드: 언어별로 분리된 훈련/테스트 데이터셋 생성")
+        print(f"  훈련 언어: {train_languages}")
+        print(f"  테스트 언어: {test_languages}")
+        
+        # 훈련용 데이터셋 생성
+        train_dataset = DementiaDataset(
+            data_dir=data_dir,
+            processor=processor,
+            audio_processor=audio_processor,
+            max_length=config.max_length,
+            languages=train_languages
+        )
+        
+        # 테스트용 데이터셋 생성
+        test_dataset = DementiaDataset(
+            data_dir=data_dir,
+            processor=processor,
+            audio_processor=audio_processor,
+            max_length=config.max_length,
+            languages=test_languages
+        )
+        
+        print(f"📊 Cross-Lingual 데이터 분할:")
+        print(f"  훈련 데이터: {len(train_dataset)} 샘플 (언어: {train_languages})")
+        print(f"  테스트 데이터: {len(test_dataset)} 샘플 (언어: {test_languages})")
+        
+    else:
+        print("🎯 일반 모드: Stratified Split 수행 중...")
+        
+        # 전체 데이터셋 생성
+        full_dataset = DementiaDataset(
+            data_dir=data_dir,
+            processor=processor,
+            audio_processor=audio_processor,
+            max_length=config.max_length,
+            languages=config.languages
+        )
+        
+        # Stratified 데이터 분할 (언어별 + 라벨별 비율 유지)
+        train_indices, test_indices = create_stratified_split(
+            full_dataset, 
+            train_split=train_split,
+            random_seed=config.random_seed
+        )
+        
+        # Subset으로 데이터셋 분할
+        train_dataset = Subset(full_dataset, train_indices)
+        test_dataset = Subset(full_dataset, test_indices)
+        
+        print(f"📊 일반 데이터 분할 완료:")
+        print(f"  훈련 데이터: {len(train_dataset)} 샘플 ({train_split*100:.0f}%)")
+        print(f"  테스트 데이터: {len(test_dataset)} 샘플 ({test_split*100:.0f}%)")
+        print(f"  전체 데이터: {len(full_dataset)} 샘플")
     
     # 데이터로더 생성
     train_loader = DataLoader(
@@ -301,10 +338,5 @@ def create_dataloaders(data_dir: str,
         num_workers=4,
         pin_memory=True
     )
-    
-    print(f"📊 데이터 분할 완료:")
-    print(f"  훈련 데이터: {len(train_dataset)} 샘플 ({train_split*100:.0f}%)")
-    print(f"  테스트 데이터: {len(test_dataset)} 샘플 ({test_split*100:.0f}%)")
-    print(f"  전체 데이터: {len(full_dataset)} 샘플")
     
     return train_loader, test_loader 

@@ -75,6 +75,11 @@ class TrainingConfig:
     # 혼합 정밀도 훈련
     fp16: bool = True
     bf16: bool = False
+    
+    # Cross-lingual 설정
+    cross_lingual_mode: bool = False
+    train_languages: List[str] = None
+    test_languages: List[str] = None
 
 @dataclass
 class DataConfig:
