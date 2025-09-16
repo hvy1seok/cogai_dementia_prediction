@@ -83,28 +83,89 @@ def setup_wandb(config: SigLIPSAMConfig):
     )
 
 def compute_metrics(predictions, labels):
-    """메트릭 계산"""
-    # 예측값과 실제값
-    preds = np.argmax(predictions, axis=1)
+    """메트릭 계산 - 최적 threshold 기반"""
+    predictions = np.array(predictions)
+    labels = np.array(labels)
     
-    # 기본 메트릭
-    accuracy = accuracy_score(labels, preds)
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='weighted')
-    
-    # AUC 계산 (확률값 사용)
-    try:
+    if predictions.shape[1] == 2:
+        # 이진 분류: 치매 클래스 확률 사용
         probs = torch.softmax(torch.tensor(predictions), dim=1)[:, 1].numpy()
-        auc = roc_auc_score(labels, probs)
-    except:
-        auc = 0.0
-    
-    return {
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
-        'auc': auc
-    }
+        
+        # ROC AUC 계산
+        try:
+            auc = roc_auc_score(labels, probs)
+        except:
+            auc = 0.0
+        
+        # 최적 threshold 찾기 (Youden's J statistic)
+        try:
+            from sklearn.metrics import roc_curve
+            fpr, tpr, thresholds = roc_curve(labels, probs)
+            optimal_idx = np.argmax(tpr - fpr)
+            optimal_threshold = thresholds[optimal_idx]
+        except:
+            optimal_threshold = 0.5
+        
+        # 최적 threshold로 예측
+        optimal_preds = (probs >= optimal_threshold).astype(int)
+        
+        # 기본 threshold (0.5)로도 예측
+        default_preds = (probs >= 0.5).astype(int)
+        
+        # argmax 예측 (기존 방식)
+        argmax_preds = np.argmax(predictions, axis=1)
+        
+        # 최적 threshold 기반 메트릭 (메인)
+        optimal_accuracy = accuracy_score(labels, optimal_preds)
+        optimal_precision, optimal_recall, optimal_f1, _ = precision_recall_fscore_support(
+            labels, optimal_preds, average='weighted', zero_division=0
+        )
+        
+        # 비교용 메트릭들
+        default_accuracy = accuracy_score(labels, default_preds)
+        default_precision, default_recall, default_f1, _ = precision_recall_fscore_support(
+            labels, default_preds, average='weighted', zero_division=0
+        )
+        
+        argmax_accuracy = accuracy_score(labels, argmax_preds)
+        argmax_precision, argmax_recall, argmax_f1, _ = precision_recall_fscore_support(
+            labels, argmax_preds, average='weighted', zero_division=0
+        )
+        
+        return {
+            # 메인 지표 (최적 threshold 기반)
+            'accuracy': optimal_accuracy,
+            'precision': optimal_precision,
+            'recall': optimal_recall,
+            'f1': optimal_f1,
+            'auc': auc,
+            'optimal_threshold': optimal_threshold,
+            
+            # 비교 지표들
+            'accuracy_default': default_accuracy,
+            'precision_default': default_precision,
+            'recall_default': default_recall,
+            'f1_default': default_f1,
+            
+            'accuracy_argmax': argmax_accuracy,
+            'precision_argmax': argmax_precision,
+            'recall_argmax': argmax_recall,
+            'f1_argmax': argmax_f1,
+        }
+    else:
+        # 다중 분류
+        preds = np.argmax(predictions, axis=1)
+        accuracy = accuracy_score(labels, preds)
+        precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='weighted', zero_division=0)
+        
+        return {
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+            'auc': 0.0,
+            'optimal_threshold': 0.5
+        }
 
 def plot_roc_curve(predictions, labels, title="ROC Curve", save_path=None):
     """ROC 곡선을 그리고 wandb에 로깅"""
@@ -446,28 +507,56 @@ def train_model(config: SigLIPSAMConfig):
         # 스케줄러 업데이트
         scheduler.step()
         
-        # 로깅
-        wandb.log({
+        # 로깅 (최적 threshold 기반 메트릭 포함)
+        wandb_log = {
             'epoch': epoch + 1,
             'train_loss': train_loss,
             'train_accuracy': train_metrics['accuracy'],
+            'train_precision': train_metrics['precision'],
+            'train_recall': train_metrics['recall'],
             'train_f1': train_metrics['f1'],
             'train_auc': train_metrics['auc'],
             'val_loss': val_loss,
             'val_accuracy': val_metrics['accuracy'],
+            'val_precision': val_metrics['precision'],
+            'val_recall': val_metrics['recall'],
             'val_f1': val_metrics['f1'],
             'val_auc': val_metrics['auc'],
             'test_loss': test_loss,
             'test_accuracy': test_metrics['accuracy'],
+            'test_precision': test_metrics['precision'],
+            'test_recall': test_metrics['recall'],
             'test_f1': test_metrics['f1'],
             'test_auc': test_metrics['auc'],
             'learning_rate': optimizer.param_groups[0]['lr']
-        })
+        }
         
-        # 결과 출력
-        print(f"훈련 - Loss: {train_loss:.4f}, Acc: {train_metrics['accuracy']:.4f}, F1: {train_metrics['f1']:.4f}, AUC: {train_metrics['auc']:.4f}")
-        print(f"검증 - Loss: {val_loss:.4f}, Acc: {val_metrics['accuracy']:.4f}, F1: {val_metrics['f1']:.4f}, AUC: {val_metrics['auc']:.4f}")
-        print(f"테스트 - Loss: {test_loss:.4f}, Acc: {test_metrics['accuracy']:.4f}, F1: {test_metrics['f1']:.4f}, AUC: {test_metrics['auc']:.4f}")
+        # 최적 threshold 정보 추가
+        if 'optimal_threshold' in val_metrics:
+            wandb_log['val_optimal_threshold'] = val_metrics['optimal_threshold']
+        if 'optimal_threshold' in test_metrics:
+            wandb_log['test_optimal_threshold'] = test_metrics['optimal_threshold']
+        
+        # 비교 메트릭도 추가
+        if 'accuracy_default' in val_metrics:
+            wandb_log['val_accuracy_default_0.5'] = val_metrics['accuracy_default']
+            wandb_log['val_accuracy_argmax'] = val_metrics['accuracy_argmax']
+        if 'accuracy_default' in test_metrics:
+            wandb_log['test_accuracy_default_0.5'] = test_metrics['accuracy_default']
+            wandb_log['test_accuracy_argmax'] = test_metrics['accuracy_argmax']
+        
+        wandb.log(wandb_log)
+        
+        # 결과 출력 (최적 threshold 기반)
+        print(f"훈련 - Loss: {train_loss:.4f}, Acc: {train_metrics['accuracy']:.4f}, Prec: {train_metrics['precision']:.4f}, Rec: {train_metrics['recall']:.4f}, F1: {train_metrics['f1']:.4f}, AUC: {train_metrics['auc']:.4f}")
+        print(f"검증 - Loss: {val_loss:.4f}, Acc: {val_metrics['accuracy']:.4f}, Prec: {val_metrics['precision']:.4f}, Rec: {val_metrics['recall']:.4f}, F1: {val_metrics['f1']:.4f}, AUC: {val_metrics['auc']:.4f}")
+        print(f"테스트 - Loss: {test_loss:.4f}, Acc: {test_metrics['accuracy']:.4f}, Prec: {test_metrics['precision']:.4f}, Rec: {test_metrics['recall']:.4f}, F1: {test_metrics['f1']:.4f}, AUC: {test_metrics['auc']:.4f}")
+        
+        # Threshold 정보 출력
+        if 'optimal_threshold' in val_metrics:
+            print(f"🎯 검증 최적 threshold: {val_metrics['optimal_threshold']:.3f}")
+        if 'optimal_threshold' in test_metrics:
+            print(f"🎯 테스트 최적 threshold: {test_metrics['optimal_threshold']:.3f}")
         
         # 베스트 모델 저장 (validation AUC 기준)
         if val_metrics['auc'] > best_val_auc:
@@ -502,11 +591,23 @@ def train_model(config: SigLIPSAMConfig):
                 'final_test_auc': final_test_metrics['auc'],
             })
             
-            print(f"🎯 최종 테스트 결과:")
+            print(f"🎯 최종 테스트 결과 (베스트 모델):")
             print(f"   Loss: {final_test_loss:.4f}")
-            print(f"   Accuracy: {final_test_metrics['accuracy']:.4f}")
-            print(f"   F1: {final_test_metrics['f1']:.4f}")
             print(f"   AUC: {final_test_metrics['auc']:.4f}")
+            print(f"   Accuracy: {final_test_metrics['accuracy']:.4f}")
+            print(f"   Precision: {final_test_metrics['precision']:.4f}")
+            print(f"   Recall: {final_test_metrics['recall']:.4f}")
+            print(f"   F1: {final_test_metrics['f1']:.4f}")
+            
+            if 'optimal_threshold' in final_test_metrics:
+                print(f"   최적 Threshold: {final_test_metrics['optimal_threshold']:.3f}")
+                
+                # Threshold 비교 출력
+                if 'accuracy_default' in final_test_metrics:
+                    print(f"\n📊 Threshold 비교:")
+                    print(f"   최적 threshold ({final_test_metrics['optimal_threshold']:.3f}): Acc={final_test_metrics['accuracy']:.4f}")
+                    print(f"   기본 threshold (0.500): Acc={final_test_metrics['accuracy_default']:.4f}")
+                    print(f"   Argmax 방식: Acc={final_test_metrics['accuracy_argmax']:.4f}")
             
         except Exception as e:
             print(f"⚠️ 최종 평가 실패: {e}")

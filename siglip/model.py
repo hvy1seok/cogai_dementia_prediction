@@ -392,80 +392,202 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         return torch.tensor(language_ids, device=self.device)
     
     def _compute_validation_metrics(self):
-        """검증 메트릭 계산"""
+        """검증 메트릭 계산 - 최적 threshold 기반"""
         all_logits = torch.cat([x['logits'] for x in self.validation_step_outputs])
         all_labels = torch.cat([x['labels'] for x in self.validation_step_outputs])
         
-        # 예측값
+        # 예측 확률 계산
         probs = F.softmax(all_logits, dim=-1)
-        preds = torch.argmax(all_logits, dim=-1)
         
-        # 메트릭 계산
-        accuracy = accuracy_score(all_labels.cpu(), preds.cpu())
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            all_labels.cpu(), preds.cpu(), average='weighted'
-        )
-        
-        # ROC AUC (이진 분류인 경우)
         if all_logits.shape[1] == 2:
-            auc = roc_auc_score(all_labels.cpu(), probs[:, 1].cpu())
+            # 이진 분류: 치매 클래스 확률 사용
+            y_scores = probs[:, 1].cpu().numpy()
+            y_true = all_labels.cpu().numpy()
+            
+            # ROC AUC 계산
+            auc = roc_auc_score(y_true, y_scores)
+            
+            # 최적 threshold 찾기 (Youden's J statistic)
+            from sklearn.metrics import roc_curve
+            fpr, tpr, thresholds = roc_curve(y_true, y_scores)
+            optimal_idx = np.argmax(tpr - fpr)
+            optimal_threshold = thresholds[optimal_idx]
+            
+            # 최적 threshold로 예측
+            optimal_preds = (y_scores >= optimal_threshold).astype(int)
+            
+            # 기본 threshold (0.5)로도 예측
+            default_preds = (y_scores >= 0.5).astype(int)
+            
+            # 최적 threshold 기반 메트릭
+            optimal_accuracy = accuracy_score(y_true, optimal_preds)
+            optimal_precision, optimal_recall, optimal_f1, _ = precision_recall_fscore_support(
+                y_true, optimal_preds, average='weighted', zero_division=0
+            )
+            
+            # 기본 threshold 기반 메트릭 (비교용)
+            default_accuracy = accuracy_score(y_true, default_preds)
+            default_precision, default_recall, default_f1, _ = precision_recall_fscore_support(
+                y_true, default_preds, average='weighted', zero_division=0
+            )
+            
         else:
+            # 다중 분류
             auc = 0.0
+            optimal_threshold = 0.5
+            optimal_preds = torch.argmax(all_logits, dim=-1).cpu().numpy()
+            default_preds = optimal_preds
+            y_true = all_labels.cpu().numpy()
+            
+            optimal_accuracy = accuracy_score(y_true, optimal_preds)
+            optimal_precision, optimal_recall, optimal_f1, _ = precision_recall_fscore_support(
+                y_true, optimal_preds, average='weighted', zero_division=0
+            )
+            default_accuracy = optimal_accuracy
+            default_precision, default_recall, default_f1 = optimal_precision, optimal_recall, optimal_f1
         
-        # 로깅
-        self.log('val_accuracy_final', accuracy)
-        self.log('val_precision', precision)
-        self.log('val_recall', recall)
-        self.log('val_f1', f1)
-        self.log('val_auc', auc)
+        # 로깅 - 최적 threshold 기반 (베스트 모델 선택용)
+        self.log('val_accuracy', optimal_accuracy)
+        self.log('val_precision', optimal_precision)
+        self.log('val_recall', optimal_recall)
+        self.log('val_f1', optimal_f1)
+        self.log('val_auc', auc)  # 베스트 모델 선택 기준
+        self.log('val_optimal_threshold', optimal_threshold)
+        
+        # 추가 로깅 - 비교용
+        self.log('val_accuracy_default', default_accuracy)
         
         # wandb에 상세 메트릭 로깅
         if self.logger:
             self.logger.experiment.log({
-                'val/accuracy': accuracy,
-                'val/precision': precision,
-                'val/recall': recall,
-                'val/f1': f1,
-                'val/auc': auc
+                # 최적 threshold 기반 (메인 지표)
+                'val/accuracy_optimal': optimal_accuracy,
+                'val/precision_optimal': optimal_precision,
+                'val/recall_optimal': optimal_recall,
+                'val/f1_optimal': optimal_f1,
+                'val/auc': auc,
+                'val/optimal_threshold': optimal_threshold,
+                
+                # 비교 지표
+                'val/accuracy_default_0.5': default_accuracy,
+                'val/precision_default_0.5': default_precision,
+                'val/recall_default_0.5': default_recall,
+                'val/f1_default_0.5': default_f1,
             })
     
     def _compute_test_metrics(self):
-        """테스트 메트릭 계산"""
+        """테스트 메트릭 계산 - 최적 threshold 기반"""
         all_logits = torch.cat([x['logits'] for x in self.test_step_outputs])
         all_labels = torch.cat([x['labels'] for x in self.test_step_outputs])
         
-        # 예측값
+        # 예측 확률 계산
         probs = F.softmax(all_logits, dim=-1)
-        preds = torch.argmax(all_logits, dim=-1)
         
-        # 메트릭 계산
-        accuracy = accuracy_score(all_labels.cpu(), preds.cpu())
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            all_labels.cpu(), preds.cpu(), average='weighted'
-        )
-        
-        # ROC AUC (이진 분류인 경우)
         if all_logits.shape[1] == 2:
-            auc = roc_auc_score(all_labels.cpu(), probs[:, 1].cpu())
+            # 이진 분류: 치매 클래스 확률 사용
+            y_scores = probs[:, 1].cpu().numpy()
+            y_true = all_labels.cpu().numpy()
+            
+            # ROC AUC 계산
+            auc = roc_auc_score(y_true, y_scores)
+            
+            # 최적 threshold 찾기 (Youden's J statistic)
+            from sklearn.metrics import roc_curve
+            fpr, tpr, thresholds = roc_curve(y_true, y_scores)
+            optimal_idx = np.argmax(tpr - fpr)
+            optimal_threshold = thresholds[optimal_idx]
+            
+            # 최적 threshold로 예측
+            optimal_preds = (y_scores >= optimal_threshold).astype(int)
+            
+            # 기본 threshold (0.5)로도 예측
+            default_preds = (y_scores >= 0.5).astype(int)
+            
+            # 최적 threshold 기반 메트릭
+            optimal_accuracy = accuracy_score(y_true, optimal_preds)
+            optimal_precision, optimal_recall, optimal_f1, _ = precision_recall_fscore_support(
+                y_true, optimal_preds, average='weighted', zero_division=0
+            )
+            
+            # 기본 threshold 기반 메트릭 (비교용)
+            default_accuracy = accuracy_score(y_true, default_preds)
+            default_precision, default_recall, default_f1, _ = precision_recall_fscore_support(
+                y_true, default_preds, average='weighted', zero_division=0
+            )
+            
+            # argmax 기반 메트릭 (기존 방식)
+            argmax_preds = torch.argmax(all_logits, dim=-1).cpu().numpy()
+            argmax_accuracy = accuracy_score(y_true, argmax_preds)
+            argmax_precision, argmax_recall, argmax_f1, _ = precision_recall_fscore_support(
+                y_true, argmax_preds, average='weighted', zero_division=0
+            )
+            
         else:
+            # 다중 분류
             auc = 0.0
+            optimal_threshold = 0.5
+            y_scores = probs.max(dim=-1)[0].cpu().numpy()
+            optimal_preds = torch.argmax(all_logits, dim=-1).cpu().numpy()
+            default_preds = optimal_preds
+            argmax_preds = optimal_preds
+            y_true = all_labels.cpu().numpy()
+            
+            optimal_accuracy = accuracy_score(y_true, optimal_preds)
+            optimal_precision, optimal_recall, optimal_f1, _ = precision_recall_fscore_support(
+                y_true, optimal_preds, average='weighted', zero_division=0
+            )
+            default_accuracy = optimal_accuracy
+            default_precision, default_recall, default_f1 = optimal_precision, optimal_recall, optimal_f1
+            argmax_accuracy = optimal_accuracy
+            argmax_precision, argmax_recall, argmax_f1 = optimal_precision, optimal_recall, optimal_f1
         
-        # 로깅
-        self.log('test_accuracy_final', accuracy)
-        self.log('test_precision', precision)
-        self.log('test_recall', recall)
-        self.log('test_f1', f1)
+        # 로깅 - 최적 threshold 기반 (메인)
+        self.log('test_accuracy', optimal_accuracy)
+        self.log('test_precision', optimal_precision)
+        self.log('test_recall', optimal_recall)
+        self.log('test_f1', optimal_f1)
         self.log('test_auc', auc)
+        self.log('test_optimal_threshold', optimal_threshold)
+        
+        # 추가 로깅 - 비교용
+        self.log('test_accuracy_default', default_accuracy)
+        self.log('test_accuracy_argmax', argmax_accuracy)
         
         # wandb에 상세 메트릭 로깅
         if self.logger:
             self.logger.experiment.log({
-                'test/accuracy': accuracy,
-                'test/precision': precision,
-                'test/recall': recall,
-                'test/f1': f1,
-                'test/auc': auc
+                # 최적 threshold 기반 (메인 지표)
+                'test/accuracy_optimal': optimal_accuracy,
+                'test/precision_optimal': optimal_precision,
+                'test/recall_optimal': optimal_recall,
+                'test/f1_optimal': optimal_f1,
+                'test/auc': auc,
+                'test/optimal_threshold': optimal_threshold,
+                
+                # 비교 지표들
+                'test/accuracy_default_0.5': default_accuracy,
+                'test/precision_default_0.5': default_precision,
+                'test/recall_default_0.5': default_recall,
+                'test/f1_default_0.5': default_f1,
+                
+                'test/accuracy_argmax': argmax_accuracy,
+                'test/precision_argmax': argmax_precision,
+                'test/recall_argmax': argmax_recall,
+                'test/f1_argmax': argmax_f1,
             })
+        
+        # 콘솔 출력
+        print(f"\n🎯 테스트 결과 (최적 threshold = {optimal_threshold:.3f}):")
+        print(f"   AUC: {auc:.4f}")
+        print(f"   Accuracy: {optimal_accuracy:.4f}")
+        print(f"   Precision: {optimal_precision:.4f}")
+        print(f"   Recall: {optimal_recall:.4f}")
+        print(f"   F1: {optimal_f1:.4f}")
+        
+        print(f"\n📊 Threshold 비교:")
+        print(f"   최적 threshold ({optimal_threshold:.3f}): Acc={optimal_accuracy:.4f}")
+        print(f"   기본 threshold (0.500): Acc={default_accuracy:.4f}")
+        print(f"   Argmax 방식: Acc={argmax_accuracy:.4f}")
     
     def configure_optimizers(self):
         """옵티마이저 설정"""
