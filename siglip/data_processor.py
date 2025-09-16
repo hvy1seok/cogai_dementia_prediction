@@ -187,9 +187,9 @@ class DementiaDataset(Dataset):
         
         return inputs
 
-def create_stratified_split(dataset, train_split: float = 0.8, random_seed: int = 42):
+def create_stratified_split(dataset, train_split: float = 0.7, val_split: float = 0.1, test_split: float = 0.2, random_seed: int = 42):
     """
-    언어별 + 라벨별 비율을 유지하면서 stratified split 수행
+    언어별 + 라벨별 비율을 유지하면서 stratified split 수행 (train:val:test = 7:1:2)
     """
     # 데이터에서 언어와 라벨 정보 추출
     languages = []
@@ -206,55 +206,71 @@ def create_stratified_split(dataset, train_split: float = 0.8, random_seed: int 
     # 전체 인덱스 생성
     indices = list(range(len(dataset)))
     
-    # Stratified split 수행
-    train_indices, test_indices = train_test_split(
+    # 첫 번째 분할: train vs (val + test)
+    train_indices, temp_indices = train_test_split(
         indices,
-        test_size=1-train_split,
+        test_size=val_split + test_split,
         stratify=stratify_keys,
         random_state=random_seed
     )
     
+    # temp 데이터의 stratify 키 생성
+    temp_stratify_keys = [stratify_keys[i] for i in temp_indices]
+    
+    # 두 번째 분할: val vs test
+    val_indices, test_indices = train_test_split(
+        temp_indices,
+        test_size=test_split / (val_split + test_split),  # test 비율 조정
+        stratify=temp_stratify_keys,
+        random_state=random_seed
+    )
+    
     # 분할 결과 통계 출력
-    print(f"\n📊 Stratified Split 결과:")
+    print(f"\n📊 Stratified Split 결과 (7:1:2):")
     print(f"  전체 데이터: {len(dataset)} 샘플")
     print(f"  훈련 데이터: {len(train_indices)} 샘플 ({len(train_indices)/len(dataset)*100:.1f}%)")
+    print(f"  검증 데이터: {len(val_indices)} 샘플 ({len(val_indices)/len(dataset)*100:.1f}%)")
     print(f"  테스트 데이터: {len(test_indices)} 샘플 ({len(test_indices)/len(dataset)*100:.1f}%)")
     
-    # 훈련/테스트 세트의 언어별 분포 확인
+    # 훈련/검증/테스트 세트의 언어별 분포 확인
     train_lang_dist = Counter([languages[i] for i in train_indices])
+    val_lang_dist = Counter([languages[i] for i in val_indices])
     test_lang_dist = Counter([languages[i] for i in test_indices])
     train_label_dist = Counter([labels[i] for i in train_indices])
+    val_label_dist = Counter([labels[i] for i in val_indices])
     test_label_dist = Counter([labels[i] for i in test_indices])
     
     print(f"\n📊 언어별 분포:")
     for lang in set(languages):
         train_count = train_lang_dist[lang]
+        val_count = val_lang_dist[lang]
         test_count = test_lang_dist[lang]
-        total_count = train_count + test_count
+        total_count = train_count + val_count + test_count
         if total_count > 0:
             print(f"  {lang}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
+                  f"검증 {val_count}개 ({val_count/total_count*100:.1f}%), "
                   f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
     
     print(f"\n📊 라벨별 분포:")
     label_names = {0: '정상', 1: '치매'}
     for label in [0, 1]:
         train_count = train_label_dist[label]
+        val_count = val_label_dist[label]
         test_count = test_label_dist[label]
-        total_count = train_count + test_count
+        total_count = train_count + val_count + test_count
         if total_count > 0:
             print(f"  {label_names[label]}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
+                  f"검증 {val_count}개 ({val_count/total_count*100:.1f}%), "
                   f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
     
-    return train_indices, test_indices
+    return train_indices, val_indices, test_indices
 
 def create_dataloaders(data_dir: str,
                       processor: AutoProcessor,  # SigLIP2 지원
                       config,
-                      train_split: float = 0.8,
-                      test_split: float = 0.2,
                       cross_lingual_mode: bool = False,
                       train_languages: List[str] = None,
-                      test_languages: List[str] = None) -> Tuple[DataLoader, DataLoader]:
+                      test_languages: List[str] = None) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """데이터로더 생성 (일반 모드 또는 Cross-Lingual 모드)"""
     
     audio_processor = AudioToMelSpectrogram(
@@ -272,14 +288,26 @@ def create_dataloaders(data_dir: str,
         print(f"  훈련 언어: {train_languages}")
         print(f"  테스트 언어: {test_languages}")
         
-        # 훈련용 데이터셋 생성
-        train_dataset = DementiaDataset(
+        # 훈련용 데이터셋 생성 (train + val)
+        train_full_dataset = DementiaDataset(
             data_dir=data_dir,
             processor=processor,
             audio_processor=audio_processor,
             max_length=config.max_length,
             languages=train_languages
         )
+        
+        # 훈련 데이터를 train:val = 7:1로 분할
+        train_indices, val_indices, _ = create_stratified_split(
+            train_full_dataset,
+            train_split=0.875,  # 7/(7+1) = 0.875
+            val_split=0.125,    # 1/(7+1) = 0.125
+            test_split=0.0,     # Cross-lingual에서는 test는 다른 언어
+            random_seed=config.random_seed
+        )
+        
+        train_dataset = Subset(train_full_dataset, train_indices)
+        val_dataset = Subset(train_full_dataset, val_indices)
         
         # 테스트용 데이터셋 생성
         test_dataset = DementiaDataset(
@@ -292,6 +320,7 @@ def create_dataloaders(data_dir: str,
         
         print(f"📊 Cross-Lingual 데이터 분할:")
         print(f"  훈련 데이터: {len(train_dataset)} 샘플 (언어: {train_languages})")
+        print(f"  검증 데이터: {len(val_dataset)} 샘플 (언어: {train_languages})")
         print(f"  테스트 데이터: {len(test_dataset)} 샘플 (언어: {test_languages})")
         
     else:
@@ -307,19 +336,23 @@ def create_dataloaders(data_dir: str,
         )
         
         # Stratified 데이터 분할 (언어별 + 라벨별 비율 유지)
-        train_indices, test_indices = create_stratified_split(
+        train_indices, val_indices, test_indices = create_stratified_split(
             full_dataset, 
-            train_split=train_split,
+            train_split=config.train_split,
+            val_split=config.val_split,
+            test_split=config.test_split,
             random_seed=config.random_seed
         )
         
         # Subset으로 데이터셋 분할
         train_dataset = Subset(full_dataset, train_indices)
+        val_dataset = Subset(full_dataset, val_indices)
         test_dataset = Subset(full_dataset, test_indices)
         
         print(f"📊 일반 데이터 분할 완료:")
-        print(f"  훈련 데이터: {len(train_dataset)} 샘플 ({train_split*100:.0f}%)")
-        print(f"  테스트 데이터: {len(test_dataset)} 샘플 ({test_split*100:.0f}%)")
+        print(f"  훈련 데이터: {len(train_dataset)} 샘플 ({config.train_split*100:.0f}%)")
+        print(f"  검증 데이터: {len(val_dataset)} 샘플 ({config.val_split*100:.0f}%)")
+        print(f"  테스트 데이터: {len(test_dataset)} 샘플 ({config.test_split*100:.0f}%)")
         print(f"  전체 데이터: {len(full_dataset)} 샘플")
     
     # 데이터로더 생성
@@ -327,6 +360,14 @@ def create_dataloaders(data_dir: str,
         train_dataset,
         batch_size=config.batch_size,
         shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+    
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=config.batch_size,
+        shuffle=False,
         num_workers=4,
         pin_memory=True
     )
@@ -339,4 +380,4 @@ def create_dataloaders(data_dir: str,
         pin_memory=True
     )
     
-    return train_loader, test_loader 
+    return train_loader, val_loader, test_loader 

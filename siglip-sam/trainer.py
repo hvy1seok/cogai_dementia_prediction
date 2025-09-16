@@ -221,7 +221,7 @@ def plot_confusion_matrix(predictions, labels, title="Confusion Matrix", save_pa
         print(f"❌ Confusion Matrix 생성 오류: {e}")
         plt.close()
 
-def train_epoch(model, train_loader, optimizer, config, scaler=None):
+def train_epoch(model, train_loader, optimizer, config, scaler=None, use_mixed_precision=False):
     """한 에포크 훈련"""
     model.train()
     total_loss = 0.0
@@ -234,52 +234,28 @@ def train_epoch(model, train_loader, optimizer, config, scaler=None):
             if isinstance(batch[key], torch.Tensor):
                 batch[key] = batch[key].to(config.device)
         
-        # SAM 옵티마이저 사용 시
+        # SAM 옵티마이저 사용 시 (mixed precision 비활성화로 안정성 확보)
         if config.optimizer_type == "sam":
-            if scaler and config.mixed_precision:
-                # Mixed precision + SAM
-                # 첫 번째 forward pass
-                with autocast('cuda'):
-                    logits = model(batch)
-                    loss = model.compute_loss(logits, batch['labels'])
-                
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
-                optimizer.first_step(zero_grad=True)
-                
-                # 두 번째 forward pass (새로운 scaler 스텝)
-                with autocast('cuda'):
-                    logits = model(batch)
-                    loss = model.compute_loss(logits, batch['labels'])
-                
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
-                optimizer.second_step(zero_grad=True)
-                scaler.update()
-                
-            else:
-                # No mixed precision + SAM
-                # 첫 번째 forward pass
-                logits = model(batch)
-                loss = model.compute_loss(logits, batch['labels'])
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
-                optimizer.first_step(zero_grad=True)
-                
-                # 두 번째 forward pass
-                logits = model(batch)
-                loss = model.compute_loss(logits, batch['labels'])
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
-                optimizer.second_step(zero_grad=True)
+            # SAM은 mixed precision 없이 사용 (안정성을 위해)
+            # 첫 번째 forward pass
+            logits = model(batch)
+            loss = model.compute_loss(logits, batch['labels'])
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
+            optimizer.first_step(zero_grad=True)
+            
+            # 두 번째 forward pass
+            logits = model(batch)
+            loss = model.compute_loss(logits, batch['labels'])
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
+            optimizer.second_step(zero_grad=True)
         
         else:
             # 일반 옵티마이저
             optimizer.zero_grad()
             
-            if scaler and config.mixed_precision:
+            if scaler and use_mixed_precision:
                 with autocast('cuda'):
                     logits = model(batch)
                     loss = model.compute_loss(logits, batch['labels'])
@@ -316,7 +292,7 @@ def train_epoch(model, train_loader, optimizer, config, scaler=None):
     
     return avg_loss, metrics
 
-def evaluate(model, test_loader, config):
+def evaluate(model, test_loader, config, use_mixed_precision=False, title_prefix="Test"):
     """모델 평가"""
     model.eval()
     total_loss = 0.0
@@ -330,7 +306,7 @@ def evaluate(model, test_loader, config):
                 if isinstance(batch[key], torch.Tensor):
                     batch[key] = batch[key].to(config.device)
             
-            if config.mixed_precision:
+            if use_mixed_precision:
                 with autocast('cuda'):
                     logits = model(batch)
                     loss = model.compute_loss(logits, batch['labels'])
@@ -352,8 +328,8 @@ def evaluate(model, test_loader, config):
         plot_roc_curve(
             predictions=np.array(all_predictions), 
             labels=np.array(all_labels), 
-            title="Test ROC Curve",
-            save_path=os.path.join(config.output_dir, "test_roc_curve.png")
+            title=f"{title_prefix} ROC Curve",
+            save_path=os.path.join(config.output_dir, f"{title_prefix.lower()}_roc_curve.png")
         )
     except Exception as e:
         print(f"⚠️ ROC 곡선 생성 실패: {e}")
@@ -363,8 +339,8 @@ def evaluate(model, test_loader, config):
         plot_confusion_matrix(
             predictions=np.array(all_predictions), 
             labels=np.array(all_labels), 
-            title="Test Confusion Matrix",
-            save_path=os.path.join(config.output_dir, "test_confusion_matrix.png")
+            title=f"{title_prefix} Confusion Matrix",
+            save_path=os.path.join(config.output_dir, f"{title_prefix.lower()}_confusion_matrix.png")
         )
     except Exception as e:
         print(f"⚠️ Confusion Matrix 생성 실패: {e}")
@@ -415,7 +391,7 @@ def train_model(config: SigLIPSAMConfig):
     
     # 데이터로더 생성
     print("데이터로더 생성 중...")
-    train_loader, test_loader = create_dataloaders(
+    train_loader, val_loader, test_loader = create_dataloaders(
         data_dir=config.data_dir,
         processor=processor,
         config=config,
@@ -425,6 +401,7 @@ def train_model(config: SigLIPSAMConfig):
     )
     
     print(f"훈련 데이터: {len(train_loader.dataset)} 샘플")
+    print(f"검증 데이터: {len(val_loader.dataset)} 샘플")
     print(f"테스트 데이터: {len(test_loader.dataset)} 샘플")
     
     # 모델 생성
@@ -439,24 +416,32 @@ def train_model(config: SigLIPSAMConfig):
     total_steps = len(train_loader) * config.num_epochs
     scheduler = model.create_scheduler(optimizer, config, total_steps)
     
-    # Mixed precision 스케일러
-    scaler = GradScaler('cuda') if config.mixed_precision else None
+    # Mixed precision 스케일러 (SAM 사용 시 비활성화)
+    use_mixed_precision = config.mixed_precision and config.optimizer_type != "sam"
+    scaler = GradScaler('cuda') if use_mixed_precision else None
+    
+    if config.optimizer_type == "sam" and config.mixed_precision:
+        print("⚠️ SAM 옵티마이저 사용 시 Mixed Precision을 비활성화합니다 (안정성을 위해)")
+        use_mixed_precision = False
     
     # wandb 설정
     setup_wandb(config)
     
     # 훈련 루프
-    best_auc = 0.0
+    best_val_auc = 0.0
     best_model_path = None
     
     for epoch in range(config.num_epochs):
         print(f"\n=== Epoch {epoch+1}/{config.num_epochs} ===")
         
         # 훈련
-        train_loss, train_metrics = train_epoch(model, train_loader, optimizer, config, scaler)
+        train_loss, train_metrics = train_epoch(model, train_loader, optimizer, config, scaler, use_mixed_precision)
         
-        # 평가
-        test_loss, test_metrics = evaluate(model, test_loader, config)
+        # 검증
+        val_loss, val_metrics = evaluate(model, val_loader, config, use_mixed_precision, title_prefix="Val")
+        
+        # 테스트 (매 에포크마다 참고용으로만)
+        test_loss, test_metrics = evaluate(model, test_loader, config, use_mixed_precision, title_prefix="Test")
         
         # 스케줄러 업데이트
         scheduler.step()
@@ -468,6 +453,10 @@ def train_model(config: SigLIPSAMConfig):
             'train_accuracy': train_metrics['accuracy'],
             'train_f1': train_metrics['f1'],
             'train_auc': train_metrics['auc'],
+            'val_loss': val_loss,
+            'val_accuracy': val_metrics['accuracy'],
+            'val_f1': val_metrics['f1'],
+            'val_auc': val_metrics['auc'],
             'test_loss': test_loss,
             'test_accuracy': test_metrics['accuracy'],
             'test_f1': test_metrics['f1'],
@@ -477,20 +466,21 @@ def train_model(config: SigLIPSAMConfig):
         
         # 결과 출력
         print(f"훈련 - Loss: {train_loss:.4f}, Acc: {train_metrics['accuracy']:.4f}, F1: {train_metrics['f1']:.4f}, AUC: {train_metrics['auc']:.4f}")
+        print(f"검증 - Loss: {val_loss:.4f}, Acc: {val_metrics['accuracy']:.4f}, F1: {val_metrics['f1']:.4f}, AUC: {val_metrics['auc']:.4f}")
         print(f"테스트 - Loss: {test_loss:.4f}, Acc: {test_metrics['accuracy']:.4f}, F1: {test_metrics['f1']:.4f}, AUC: {test_metrics['auc']:.4f}")
         
-        # 베스트 모델 저장
-        if test_metrics['auc'] > best_auc:
-            best_auc = test_metrics['auc']
-            best_model_path = save_checkpoint(model, optimizer, epoch + 1, test_metrics, config, is_best=True)
-            print(f"🏆 새로운 베스트 모델! AUC: {best_auc:.4f}")
+        # 베스트 모델 저장 (validation AUC 기준)
+        if val_metrics['auc'] > best_val_auc:
+            best_val_auc = val_metrics['auc']
+            best_model_path = save_checkpoint(model, optimizer, epoch + 1, val_metrics, config, is_best=True)
+            print(f"🏆 새로운 베스트 모델! Validation AUC: {best_val_auc:.4f}")
         
         # 정기 체크포인트 저장
         if (epoch + 1) % config.save_interval == 0:
-            save_checkpoint(model, optimizer, epoch + 1, test_metrics, config, is_best=False)
+            save_checkpoint(model, optimizer, epoch + 1, val_metrics, config, is_best=False)
     
     print(f"\n=== 훈련 완료 ===")
-    print(f"🏆 베스트 AUC: {best_auc:.4f}")
+    print(f"🏆 베스트 Validation AUC: {best_val_auc:.4f}")
     print(f"💾 베스트 모델: {best_model_path}")
     
     # 최종 테스트 (베스트 모델 로드해서 최종 평가)
@@ -502,7 +492,7 @@ def train_model(config: SigLIPSAMConfig):
             model.load_state_dict(checkpoint['model_state_dict'])
             
             # 최종 테스트
-            final_test_loss, final_test_metrics = evaluate(model, test_loader, config)
+            final_test_loss, final_test_metrics = evaluate(model, test_loader, config, use_mixed_precision)
             
             # 최종 결과 wandb 로깅
             wandb.log({

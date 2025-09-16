@@ -37,9 +37,9 @@ class SigLIPConfig:
     sam_rho: float = 0.05             # SAM rho 파라미터
     
     # 데이터 설정
-    train_split: float = 0.8
+    train_split: float = 0.7
     val_split: float = 0.1
-    test_split: float = 0.1
+    test_split: float = 0.2
     random_seed: int = 42
     
     # 경로 설정

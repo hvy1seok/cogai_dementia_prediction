@@ -83,11 +83,11 @@ def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
     """콜백 생성"""
     callbacks = []
     
-    # 모델 체크포인트 (AUC 기준 베스트 모델)
+    # 모델 체크포인트 (validation AUC 기준 베스트 모델)
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_dir,
-        filename="siglip2-dementia-best-auc-{test_auc:.3f}-epoch{epoch:02d}",
-        monitor="test_auc",  # AUC 기준으로 모니터링
+        filename="siglip2-dementia-best-auc-{val_auc:.3f}-epoch{epoch:02d}",
+        monitor="val_auc",  # validation AUC 기준으로 모니터링
         mode="max",  # AUC 최대값 추적
         save_top_k=3,  # 상위 3개 모델만 저장
         save_last=True,  # 마지막 모델도 저장
@@ -96,7 +96,15 @@ def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
     )
     callbacks.append(checkpoint_callback)
     
-    # 조기 종료 비활성화 (validation 없으므로 제거)
+    # 조기 종료 (validation AUC 기준)
+    early_stop_callback = EarlyStopping(
+        monitor="val_auc",
+        min_delta=training_config.early_stopping_threshold,
+        patience=training_config.early_stopping_patience,
+        mode="max",
+        verbose=True
+    )
+    callbacks.append(early_stop_callback)
     
     # 학습률 모니터링
     lr_monitor = LearningRateMonitor(logging_interval="step")
@@ -130,18 +138,17 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     train_languages = getattr(training_config, 'train_languages', None)
     test_languages = getattr(training_config, 'test_languages', None)
     
-    train_loader, test_loader = create_dataloaders(
+    train_loader, val_loader, test_loader = create_dataloaders(
         data_dir=config.data_dir,
         processor=processor,
         config=config,
-        train_split=0.8,
-        test_split=0.2,
         cross_lingual_mode=cross_lingual_mode,
         train_languages=train_languages,
         test_languages=test_languages
     )
     
     print(f"훈련 데이터: {len(train_loader.dataset)} 샘플")
+    print(f"검증 데이터: {len(val_loader.dataset)} 샘플")
     print(f"테스트 데이터: {len(test_loader.dataset)} 샘플")
     
     # 모델 생성
@@ -167,7 +174,7 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
         "gradient_clip_val": training_config.max_grad_norm,
         "accumulate_grad_batches": training_config.gradient_accumulation_steps,
         "log_every_n_steps": 10,  # 32 배치보다 작게 설정
-        "check_val_every_n_epoch": None,  # validation 비활성화
+        "check_val_every_n_epoch": 1,  # 매 에포크마다 validation
         "enable_progress_bar": True,
         "enable_model_summary": True,
     }
@@ -180,9 +187,9 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     # 훈련기 생성
     trainer = pl.Trainer(**trainer_kwargs)
     
-    # 훈련 시작 (validation 없이)
+    # 훈련 시작
     print("훈련 시작...")
-    trainer.fit(model, train_loader)
+    trainer.fit(model, train_loader, val_loader)
     
     # 베스트 모델 로드 및 테스트
     print("베스트 모델 로드 중...")

@@ -41,7 +41,8 @@ class SigLIPSAMConfig:
     sam_adaptive: bool = False        # Adaptive SAM 사용 여부
     
     # 데이터 설정
-    train_split: float = 0.8
+    train_split: float = 0.7
+    val_split: float = 0.1
     test_split: float = 0.2
     random_seed: int = 42
     
