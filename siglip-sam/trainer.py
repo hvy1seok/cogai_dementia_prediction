@@ -82,8 +82,8 @@ def setup_wandb(config: SigLIPSAMConfig):
         }
     )
 
-def compute_metrics(predictions, labels):
-    """메트릭 계산 - 최적 threshold 기반"""
+def compute_metrics(predictions, labels, languages=None):
+    """메트릭 계산 - 최적 threshold 기반 + 언어별 분석"""
     predictions = np.array(predictions)
     labels = np.array(labels)
     
@@ -132,7 +132,7 @@ def compute_metrics(predictions, labels):
             labels, argmax_preds, average='weighted', zero_division=0
         )
         
-        return {
+        metrics = {
             # 메인 지표 (최적 threshold 기반)
             'accuracy': optimal_accuracy,
             'precision': optimal_precision,
@@ -152,6 +152,13 @@ def compute_metrics(predictions, labels):
             'recall_argmax': argmax_recall,
             'f1_argmax': argmax_f1,
         }
+        
+        # 언어별 메트릭 계산
+        if languages is not None:
+            language_metrics = compute_language_specific_metrics(probs, labels, languages, optimal_threshold)
+            metrics.update(language_metrics)
+        
+        return metrics
     else:
         # 다중 분류
         preds = np.argmax(predictions, axis=1)
@@ -166,6 +173,83 @@ def compute_metrics(predictions, labels):
             'auc': 0.0,
             'optimal_threshold': 0.5
         }
+
+def compute_language_specific_metrics(y_scores, y_true, all_languages, optimal_threshold):
+    """언어별 테스트 메트릭 계산 및 출력"""
+    from collections import defaultdict, Counter
+    import numpy as np
+    from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
+    
+    # 언어별로 데이터 그룹화
+    language_data = defaultdict(lambda: {'scores': [], 'labels': [], 'indices': []})
+    
+    for i, (score, label, lang) in enumerate(zip(y_scores, y_true, all_languages)):
+        language_data[lang]['scores'].append(score)
+        language_data[lang]['labels'].append(label)
+        language_data[lang]['indices'].append(i)
+    
+    print(f"\n🌍 언어별 테스트 결과:")
+    print(f"{'='*80}")
+    
+    # wandb 로깅용 언어별 메트릭
+    language_metrics = {}
+    
+    for lang in sorted(language_data.keys()):
+        lang_scores = np.array(language_data[lang]['scores'])
+        lang_labels = np.array(language_data[lang]['labels'])
+        
+        if len(lang_scores) == 0:
+            continue
+            
+        # 언어별 AUC 계산
+        try:
+            lang_auc = roc_auc_score(lang_labels, lang_scores)
+        except ValueError:
+            lang_auc = 0.0
+        
+        # 최적 threshold로 예측
+        lang_optimal_preds = (lang_scores >= optimal_threshold).astype(int)
+        
+        # 기본 threshold (0.5)로 예측
+        lang_default_preds = (lang_scores >= 0.5).astype(int)
+        
+        # 메트릭 계산
+        lang_optimal_acc = accuracy_score(lang_labels, lang_optimal_preds)
+        lang_default_acc = accuracy_score(lang_labels, lang_default_preds)
+        
+        lang_precision, lang_recall, lang_f1, _ = precision_recall_fscore_support(
+            lang_labels, lang_optimal_preds, average='weighted', zero_division=0
+        )
+        
+        # 클래스별 분포
+        label_dist = Counter(lang_labels)
+        normal_count = label_dist[0]
+        dementia_count = label_dist[1]
+        
+        # 결과 출력
+        print(f"\n📊 {lang} ({len(lang_scores)}개 샘플)")
+        print(f"   정상: {normal_count}개, 치매: {dementia_count}개")
+        print(f"   AUC: {lang_auc:.4f}")
+        print(f"   Accuracy (최적): {lang_optimal_acc:.4f}")
+        print(f"   Accuracy (0.5): {lang_default_acc:.4f}")
+        print(f"   Precision: {lang_precision:.4f}")
+        print(f"   Recall: {lang_recall:.4f}")
+        print(f"   F1: {lang_f1:.4f}")
+        
+        # wandb 로깅용 메트릭 저장
+        language_metrics[f'{lang}_auc'] = lang_auc
+        language_metrics[f'{lang}_accuracy_optimal'] = lang_optimal_acc
+        language_metrics[f'{lang}_accuracy_default'] = lang_default_acc
+        language_metrics[f'{lang}_precision'] = lang_precision
+        language_metrics[f'{lang}_recall'] = lang_recall
+        language_metrics[f'{lang}_f1'] = lang_f1
+        language_metrics[f'{lang}_sample_count'] = len(lang_scores)
+        language_metrics[f'{lang}_normal_count'] = normal_count
+        language_metrics[f'{lang}_dementia_count'] = dementia_count
+    
+    print(f"{'='*80}")
+    
+    return language_metrics
 
 def plot_roc_curve(predictions, labels, title="ROC Curve", save_path=None):
     """ROC 곡선을 그리고 wandb에 로깅"""
@@ -354,11 +438,12 @@ def train_epoch(model, train_loader, optimizer, config, scaler=None, use_mixed_p
     return avg_loss, metrics
 
 def evaluate(model, test_loader, config, use_mixed_precision=False, title_prefix="Test"):
-    """모델 평가"""
+    """모델 평가 - 언어별 분석 포함"""
     model.eval()
     total_loss = 0.0
     all_predictions = []
     all_labels = []
+    all_languages = []
     
     with torch.no_grad():
         for batch in test_loader:
@@ -379,10 +464,20 @@ def evaluate(model, test_loader, config, use_mixed_precision=False, title_prefix
             total_loss += loss.item()
             all_predictions.extend(logits.cpu().numpy())
             all_labels.extend(batch['labels'].cpu().numpy())
+            
+            # 언어 정보 수집
+            if 'language' in batch:
+                if isinstance(batch['language'], list):
+                    all_languages.extend(batch['language'])
+                else:
+                    # 텐서인 경우 처리
+                    all_languages.extend(['Unknown'] * len(batch['labels']))
+            else:
+                all_languages.extend(['Unknown'] * len(batch['labels']))
     
-    # 메트릭 계산
+    # 메트릭 계산 (언어별 분석 포함)
     avg_loss = total_loss / len(test_loader)
-    metrics = compute_metrics(np.array(all_predictions), np.array(all_labels))
+    metrics = compute_metrics(np.array(all_predictions), np.array(all_labels), all_languages)
     
     # ROC 곡선 그리기 및 wandb 업로드
     try:
@@ -545,6 +640,11 @@ def train_model(config: SigLIPSAMConfig):
             wandb_log['test_accuracy_default_0.5'] = test_metrics['accuracy_default']
             wandb_log['test_accuracy_argmax'] = test_metrics['accuracy_argmax']
         
+        # 언어별 메트릭 추가 (테스트 메트릭에서만)
+        for key, value in test_metrics.items():
+            if any(lang in key for lang in ['English', 'Greek', 'Spanish', 'Mandarin']):
+                wandb_log[f'test_{key}'] = value
+        
         wandb.log(wandb_log)
         
         # 결과 출력 (최적 threshold 기반)
@@ -584,12 +684,19 @@ def train_model(config: SigLIPSAMConfig):
             final_test_loss, final_test_metrics = evaluate(model, test_loader, config, use_mixed_precision)
             
             # 최종 결과 wandb 로깅
-            wandb.log({
+            final_wandb_log = {
                 'final_test_loss': final_test_loss,
                 'final_test_accuracy': final_test_metrics['accuracy'],
                 'final_test_f1': final_test_metrics['f1'],
                 'final_test_auc': final_test_metrics['auc'],
-            })
+            }
+            
+            # 언어별 최종 메트릭 추가
+            for key, value in final_test_metrics.items():
+                if any(lang in key for lang in ['English', 'Greek', 'Spanish', 'Mandarin']):
+                    final_wandb_log[f'final_{key}'] = value
+            
+            wandb.log(final_wandb_log)
             
             print(f"🎯 최종 테스트 결과 (베스트 모델):")
             print(f"   Loss: {final_test_loss:.4f}")

@@ -314,10 +314,11 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         # 정확도 계산
         acc = self.val_accuracy(logits.softmax(dim=-1), batch['labels'])
         
-        # 예측값 저장 (나중에 메트릭 계산용)
+        # 예측값 저장 (언어 정보 포함)
         self.validation_step_outputs.append({
             'logits': logits,
             'labels': batch['labels'],
+            'languages': batch['language'],  # 언어별 분석용
             'loss': loss
         })
         
@@ -371,10 +372,11 @@ class SigLIPDementiaClassifier(pl.LightningModule):
                 # 배치에 한 클래스만 있는 경우 AUC 계산 불가
                 pass
         
-        # 예측값 저장
+        # 예측값 저장 (언어 정보 포함)
         self.test_step_outputs.append({
             'logits': logits,
             'labels': batch['labels'],
+            'languages': batch['language'],  # 언어별 분석용
             'loss': loss
         })
         
@@ -416,6 +418,15 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         """검증 메트릭 계산 - 최적 threshold 기반"""
         all_logits = torch.cat([x['logits'] for x in self.validation_step_outputs])
         all_labels = torch.cat([x['labels'] for x in self.validation_step_outputs])
+        
+        # 언어 정보 수집
+        all_languages = []
+        for x in self.validation_step_outputs:
+            if isinstance(x['languages'], list):
+                all_languages.extend(x['languages'])
+            else:
+                # 단일 배치의 경우
+                all_languages.extend([x['languages']] * len(x['labels']))
         
         # 예측 확률 계산
         probs = F.softmax(all_logits, dim=-1)
@@ -498,9 +509,18 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             })
     
     def _compute_test_metrics(self):
-        """테스트 메트릭 계산 - 최적 threshold 기반"""
+        """테스트 메트릭 계산 - 최적 threshold 기반 + 언어별 분석"""
         all_logits = torch.cat([x['logits'] for x in self.test_step_outputs])
         all_labels = torch.cat([x['labels'] for x in self.test_step_outputs])
+        
+        # 언어 정보 수집
+        all_languages = []
+        for x in self.test_step_outputs:
+            if isinstance(x['languages'], list):
+                all_languages.extend(x['languages'])
+            else:
+                # 단일 배치의 경우
+                all_languages.extend([x['languages']] * len(x['labels']))
         
         # 예측 확률 계산
         probs = F.softmax(all_logits, dim=-1)
@@ -599,8 +619,8 @@ class SigLIPDementiaClassifier(pl.LightningModule):
                 'test/f1_argmax': argmax_f1,
             })
         
-        # 콘솔 출력
-        print(f"\n🎯 테스트 결과 (최적 threshold = {optimal_threshold:.3f}):")
+        # 전체 결과 출력
+        print(f"\n🎯 전체 테스트 결과 (최적 threshold = {optimal_threshold:.3f}):")
         print(f"   AUC: {auc:.4f}")
         print(f"   Accuracy: {optimal_accuracy:.4f}")
         print(f"   Precision: {optimal_precision:.4f}")
@@ -611,6 +631,91 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         print(f"   최적 threshold ({optimal_threshold:.3f}): Acc={optimal_accuracy:.4f}")
         print(f"   기본 threshold (0.500): Acc={default_accuracy:.4f}")
         print(f"   Argmax 방식: Acc={argmax_accuracy:.4f}")
+        
+        # 언어별 결과 계산 및 출력
+        self._compute_language_specific_metrics(y_scores, y_true, all_languages, optimal_threshold)
+    
+    def _compute_language_specific_metrics(self, y_scores, y_true, all_languages, optimal_threshold):
+        """언어별 테스트 메트릭 계산 및 출력"""
+        from collections import defaultdict
+        import numpy as np
+        from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
+        
+        # 언어별로 데이터 그룹화
+        language_data = defaultdict(lambda: {'scores': [], 'labels': [], 'indices': []})
+        
+        for i, (score, label, lang) in enumerate(zip(y_scores, y_true, all_languages)):
+            language_data[lang]['scores'].append(score)
+            language_data[lang]['labels'].append(label)
+            language_data[lang]['indices'].append(i)
+        
+        print(f"\n🌍 언어별 테스트 결과:")
+        print(f"{'='*80}")
+        
+        # wandb 로깅용 언어별 메트릭
+        language_metrics = {}
+        
+        for lang in sorted(language_data.keys()):
+            lang_scores = np.array(language_data[lang]['scores'])
+            lang_labels = np.array(language_data[lang]['labels'])
+            
+            if len(lang_scores) == 0:
+                continue
+                
+            # 언어별 AUC 계산
+            try:
+                lang_auc = roc_auc_score(lang_labels, lang_scores)
+            except ValueError:
+                lang_auc = 0.0
+            
+            # 최적 threshold로 예측
+            lang_optimal_preds = (lang_scores >= optimal_threshold).astype(int)
+            
+            # 기본 threshold (0.5)로 예측
+            lang_default_preds = (lang_scores >= 0.5).astype(int)
+            
+            # 메트릭 계산
+            lang_optimal_acc = accuracy_score(lang_labels, lang_optimal_preds)
+            lang_default_acc = accuracy_score(lang_labels, lang_default_preds)
+            
+            lang_precision, lang_recall, lang_f1, _ = precision_recall_fscore_support(
+                lang_labels, lang_optimal_preds, average='weighted', zero_division=0
+            )
+            
+            # 클래스별 분포
+            from collections import Counter
+            label_dist = Counter(lang_labels)
+            normal_count = label_dist[0]
+            dementia_count = label_dist[1]
+            
+            # 결과 출력
+            print(f"\n📊 {lang} ({len(lang_scores)}개 샘플)")
+            print(f"   정상: {normal_count}개, 치매: {dementia_count}개")
+            print(f"   AUC: {lang_auc:.4f}")
+            print(f"   Accuracy (최적): {lang_optimal_acc:.4f}")
+            print(f"   Accuracy (0.5): {lang_default_acc:.4f}")
+            print(f"   Precision: {lang_precision:.4f}")
+            print(f"   Recall: {lang_recall:.4f}")
+            print(f"   F1: {lang_f1:.4f}")
+            
+            # wandb 로깅용 메트릭 저장
+            language_metrics[f'{lang}_auc'] = lang_auc
+            language_metrics[f'{lang}_accuracy_optimal'] = lang_optimal_acc
+            language_metrics[f'{lang}_accuracy_default'] = lang_default_acc
+            language_metrics[f'{lang}_precision'] = lang_precision
+            language_metrics[f'{lang}_recall'] = lang_recall
+            language_metrics[f'{lang}_f1'] = lang_f1
+            language_metrics[f'{lang}_sample_count'] = len(lang_scores)
+            language_metrics[f'{lang}_normal_count'] = normal_count
+            language_metrics[f'{lang}_dementia_count'] = dementia_count
+        
+        print(f"{'='*80}")
+        
+        # wandb에 언어별 메트릭 로깅
+        if self.logger:
+            self.logger.experiment.log({
+                'language_specific_metrics': language_metrics
+            })
     
     def configure_optimizers(self):
         """옵티마이저 설정"""

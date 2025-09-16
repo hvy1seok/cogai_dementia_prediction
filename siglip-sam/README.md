@@ -13,6 +13,7 @@ SigLIP2 모델을 기반으로 한 다국어 치매 진단 시스템입니다. S
 - **다국어 지원**: 영어, 그리스어, 스페인어, 만다린 지원
 - **Cross-Lingual**: 언어 간 일반화 성능 평가
 - **멀티모달**: 음성(멜스펙토그램) + 텍스트 융합 학습
+- **언어별 성능 분석**: 실시간 언어별 메트릭 계산 및 시각화
 
 ## 🚀 설치
 
@@ -38,6 +39,7 @@ siglip-sam/
 │
 ├── train_sam_english.sh           # 영어 단일 언어 훈련
 ├── train_sam_all_languages.sh     # 모든 언어 통합 훈련
+├── train_sam_all_languages_focal.sh  # 모든 언어 (Focal Loss)
 ├── train_sam_cross_lingual.sh     # Cross-lingual 훈련
 └── run_sam_experiments.sh         # SAM 실험 (3가지 손실함수)
 ```
@@ -52,6 +54,9 @@ bash train_sam_english.sh
 
 # 모든 언어 통합 (SAM 옵티마이저)
 bash train_sam_all_languages.sh
+
+# 모든 언어 통합 (SAM + Focal Loss)
+bash train_sam_all_languages_focal.sh
 ```
 
 ### 2. Cross-Lingual 훈련
@@ -160,10 +165,56 @@ mixed_precision: bool = True  # 자동으로 활성화됨
 ## 📈 성능 모니터링
 
 - **Loss**: 훈련/테스트 손실 추적
-- **Accuracy**: 분류 정확도
+- **Accuracy**: 분류 정확도 (최적 threshold 기반)
 - **F1 Score**: 불균형 데이터 고려
 - **AUC**: ROC 곡선 하 면적
 - **Learning Rate**: 스케줄러 추적
+- **Language-Specific Metrics**: 언어별 상세 성능 분석
+
+## 🌍 언어별 성능 분석
+
+### 자동 분석 기능
+
+훈련 완료 후 자동으로 다음 분석을 수행합니다:
+
+- **언어별 성능 비교**: 어떤 언어에서 모델이 더 잘 작동하는지 확인
+- **데이터 분포 확인**: 언어별 샘플 수 균형 및 정상/치매 비율 분석
+- **Threshold 효과 분석**: 최적 threshold의 언어별 효과성
+- **Cross-lingual 일반화**: 언어 간 전이 학습 성능 평가
+
+### 출력 예시
+
+```
+🌍 언어별 테스트 결과:
+================================================================================
+
+📊 English (1234개 샘플)
+   정상: 567개, 치매: 667개
+   AUC: 0.8945
+   Accuracy (최적): 0.8567
+   Accuracy (0.5): 0.8234
+   Precision: 0.8456
+   Recall: 0.8678
+   F1: 0.8566
+
+📊 Greek (456개 샘플)
+   정상: 234개, 치매: 222개
+   AUC: 0.8234
+   Accuracy (최적): 0.7890
+   Accuracy (0.5): 0.7654
+   Precision: 0.7823
+   Recall: 0.8012
+   F1: 0.7916
+```
+
+### wandb 시각화
+
+모든 언어별 메트릭이 wandb에 자동 로깅됩니다:
+
+- `test_English_auc`: 영어 AUC
+- `test_Greek_accuracy_optimal`: 그리스어 최적 정확도
+- `test_Spanish_f1`: 스페인어 F1 스코어
+- `test_Mandarin_sample_count`: 만다린 샘플 수
 
 ## 🤝 기여
 

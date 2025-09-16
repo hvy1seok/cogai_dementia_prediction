@@ -74,6 +74,18 @@ try {
         Write-Host "🎯 SAM 옵티마이저로 훈련된 영어 치매 진단 모델" -ForegroundColor Cyan
         Write-Host "   - Sharpness-Aware Minimization으로 더 나은 일반화 성능 기대"
         Write-Host "   - rho=${SAM_RHO}로 설정된 SAM 파라미터"
+        Write-Host "   - 영어 데이터에 특화된 성능 분석"
+        Write-Host ""
+        Write-Host "🔍 영어 모델 분석 인사이트:" -ForegroundColor Cyan
+        Write-Host "   ✅ 영어 데이터에서의 최적 성능 확인"
+        Write-Host "   ✅ SAM vs 기존 옵티마이저 성능 비교 기준점"
+        Write-Host "   ✅ 영어 특화 threshold 최적화"
+        Write-Host "   ✅ 환자 단위 분할의 효과 검증"
+        Write-Host ""
+        Write-Host "📊 결과 확인:" -ForegroundColor Cyan
+        Write-Host "   - 영어 데이터에서의 상세 성능 분석"
+        Write-Host "   - 최적 threshold 기반 정확한 메트릭"
+        Write-Host "   - ROC 곡선 및 Confusion Matrix"
     } else {
         Write-Host ""
         Write-Host "❌ SAM 영어 모델 훈련 중 오류가 발생했습니다." -ForegroundColor Red
