@@ -275,8 +275,8 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         acc = self.train_accuracy(logits.softmax(dim=-1), batch['labels'])
         
         # 로깅
-        self.log('train_loss', loss, prog_bar=True)
-        self.log('train_acc', acc, prog_bar=True)
+        self.log('train_loss', loss, prog_bar=True, batch_size=batch['input_ids'].size(0))
+        self.log('train_acc', acc, prog_bar=True, batch_size=batch['input_ids'].size(0))
         
         return loss
     
@@ -322,8 +322,8 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         })
         
         # 로깅
-        self.log('val_loss', loss, prog_bar=True)
-        self.log('val_acc', acc, prog_bar=True)
+        self.log('val_loss', loss, prog_bar=True, batch_size=batch['input_ids'].size(0))
+        self.log('val_acc', acc, prog_bar=True, batch_size=batch['input_ids'].size(0))
         
         return loss
     
@@ -379,8 +379,8 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         })
         
         # 로깅
-        self.log('test_loss', loss, prog_bar=True)
-        self.log('test_acc', acc, prog_bar=True)
+        self.log('test_loss', loss, prog_bar=True, batch_size=batch['input_ids'].size(0))
+        self.log('test_acc', acc, prog_bar=True, batch_size=batch['input_ids'].size(0))
         
         return loss
     
@@ -468,15 +468,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             default_precision, default_recall, default_f1 = optimal_precision, optimal_recall, optimal_f1
         
         # 로깅 - 최적 threshold 기반 (베스트 모델 선택용)
-        self.log('val_accuracy', optimal_accuracy)
-        self.log('val_precision', optimal_precision)
-        self.log('val_recall', optimal_recall)
-        self.log('val_f1', optimal_f1)
-        self.log('val_auc', auc)  # 베스트 모델 선택 기준
-        self.log('val_optimal_threshold', optimal_threshold)
+        batch_size = len(y_true)
+        self.log('val_accuracy', optimal_accuracy, batch_size=batch_size)
+        self.log('val_precision', optimal_precision, batch_size=batch_size)
+        self.log('val_recall', optimal_recall, batch_size=batch_size)
+        self.log('val_f1', optimal_f1, batch_size=batch_size)
+        self.log('val_auc', auc, batch_size=batch_size)  # 베스트 모델 선택 기준
+        self.log('val_optimal_threshold', optimal_threshold, batch_size=batch_size)
         
         # 추가 로깅 - 비교용
-        self.log('val_accuracy_default', default_accuracy)
+        self.log('val_accuracy_default', default_accuracy, batch_size=batch_size)
         
         # wandb에 상세 메트릭 로깅
         if self.logger:
@@ -563,16 +564,17 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             argmax_precision, argmax_recall, argmax_f1 = optimal_precision, optimal_recall, optimal_f1
         
         # 로깅 - 최적 threshold 기반 (메인)
-        self.log('test_accuracy', optimal_accuracy)
-        self.log('test_precision', optimal_precision)
-        self.log('test_recall', optimal_recall)
-        self.log('test_f1', optimal_f1)
-        self.log('test_auc', auc)
-        self.log('test_optimal_threshold', optimal_threshold)
+        batch_size = len(y_true)
+        self.log('test_accuracy', optimal_accuracy, batch_size=batch_size)
+        self.log('test_precision', optimal_precision, batch_size=batch_size)
+        self.log('test_recall', optimal_recall, batch_size=batch_size)
+        self.log('test_f1', optimal_f1, batch_size=batch_size)
+        self.log('test_auc', auc, batch_size=batch_size)
+        self.log('test_optimal_threshold', optimal_threshold, batch_size=batch_size)
         
         # 추가 로깅 - 비교용
-        self.log('test_accuracy_default', default_accuracy)
-        self.log('test_accuracy_argmax', argmax_accuracy)
+        self.log('test_accuracy_default', default_accuracy, batch_size=batch_size)
+        self.log('test_accuracy_argmax', argmax_accuracy, batch_size=batch_size)
         
         # wandb에 상세 메트릭 로깅
         if self.logger:

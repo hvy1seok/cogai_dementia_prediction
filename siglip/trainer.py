@@ -89,8 +89,8 @@ def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
         filename="siglip2-dementia-best-auc-{val_auc:.3f}-epoch{epoch:02d}",
         monitor="val_auc",  # validation AUC 기준으로 모니터링
         mode="max",  # AUC 최대값 추적
-        save_top_k=3,  # 상위 3개 모델만 저장
-        save_last=True,  # 마지막 모델도 저장
+        save_top_k=1,  # 베스트 모델 1개만 저장
+        save_last=False,  # 마지막 모델 저장 안함 (베스트만)
         verbose=True,
         auto_insert_metric_name=False  # 파일명에 메트릭 이름 자동 추가 방지
     )
