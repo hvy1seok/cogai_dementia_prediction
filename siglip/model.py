@@ -128,6 +128,96 @@ class FocalLoss(nn.Module):
         else:
             return focal_loss
 
+class SigLIP2ContrastiveLoss(nn.Module):
+    """
+    SigLIP2 스타일 Contrastive Learning Loss
+    - Sigmoid matching (CLIP의 softmax 대신)
+    - Same-patient audio-text pairs를 positive로 처리
+    - In-batch negative sampling
+    """
+    def __init__(self, temperature: float = 0.07, use_sigmoid: bool = True):
+        super(SigLIP2ContrastiveLoss, self).__init__()
+        self.temperature = temperature
+        self.use_sigmoid = use_sigmoid
+        self.cross_entropy = nn.CrossEntropyLoss()
+        self.bce_with_logits = nn.BCEWithLogitsLoss()
+    
+    def forward(self, audio_embeds: torch.Tensor, text_embeds: torch.Tensor, 
+                patient_ids: List[str]) -> Dict[str, torch.Tensor]:
+        """
+        Args:
+            audio_embeds: [batch_size, embed_dim] 오디오 임베딩
+            text_embeds: [batch_size, embed_dim] 텍스트 임베딩  
+            patient_ids: [batch_size] 환자 ID 리스트
+        
+        Returns:
+            Dictionary with contrastive loss and metrics
+        """
+        batch_size = audio_embeds.shape[0]
+        device = audio_embeds.device
+        
+        # L2 정규화
+        audio_embeds = F.normalize(audio_embeds, p=2, dim=1)
+        text_embeds = F.normalize(text_embeds, p=2, dim=1)
+        
+        # 유사도 행렬 계산 (audio-to-text)
+        similarity_matrix = torch.matmul(audio_embeds, text_embeds.T) / self.temperature
+        
+        # Positive mask: 같은 환자의 audio-text pair
+        positive_mask = torch.zeros(batch_size, batch_size, device=device)
+        for i in range(batch_size):
+            for j in range(batch_size):
+                if patient_ids[i] == patient_ids[j]:
+                    positive_mask[i, j] = 1.0
+        
+        # Negative mask: 다른 환자의 조합들
+        negative_mask = 1.0 - positive_mask
+        
+        if self.use_sigmoid:
+            # SigLIP2 스타일 Sigmoid matching
+            # Positive pairs는 높은 유사도를 가져야 함
+            positive_loss = self.bce_with_logits(
+                similarity_matrix * positive_mask, 
+                positive_mask
+            )
+            # Negative pairs는 낮은 유사도를 가져야 함
+            negative_loss = self.bce_with_logits(
+                similarity_matrix * negative_mask,
+                torch.zeros_like(negative_mask)
+            )
+            contrastive_loss = (positive_loss + negative_loss) / 2
+        else:
+            # CLIP 스타일 Softmax (비교용)
+            # Audio-to-text
+            a2t_loss = self.cross_entropy(similarity_matrix, torch.arange(batch_size, device=device))
+            # Text-to-audio  
+            t2a_loss = self.cross_entropy(similarity_matrix.T, torch.arange(batch_size, device=device))
+            contrastive_loss = (a2t_loss + t2a_loss) / 2
+        
+        # 메트릭 계산 (gradient 계산 안함)
+        with torch.no_grad():
+            # Positive pair 유사도
+            positive_similarities = similarity_matrix * positive_mask
+            positive_count = positive_mask.sum()
+            avg_positive_sim = positive_similarities.sum() / (positive_count + 1e-8)
+            
+            # Negative pair 유사도
+            negative_similarities = similarity_matrix * negative_mask
+            negative_count = negative_mask.sum()
+            avg_negative_sim = negative_similarities.sum() / (negative_count + 1e-8)
+            
+            # Alignment score: positive - negative 유사도 차이
+            alignment_score = avg_positive_sim - avg_negative_sim
+        
+        return {
+            'contrastive_loss': contrastive_loss,
+            'avg_positive_similarity': avg_positive_sim,
+            'avg_negative_similarity': avg_negative_sim,
+            'alignment_score': alignment_score,
+            'positive_pairs_count': positive_count,
+            'negative_pairs_count': negative_count
+        }
+
 class SigLIPDementiaClassifier(pl.LightningModule):
     """
     SigLIP2 기반 다국어 치매 진단 분류기
@@ -147,7 +237,10 @@ class SigLIPDementiaClassifier(pl.LightningModule):
                  focal_alpha: float = 1.0,
                  focal_gamma: float = 2.0,
                  optimizer_type: str = "adamw",  # "adamw", "lion", "sam"
-                 sam_rho: float = 0.05):
+                 sam_rho: float = 0.05,
+                 use_contrastive: bool = False,
+                 contrastive_weight: float = 0.5,
+                 contrastive_temperature: float = 0.07):
         
         super().__init__()
         self.save_hyperparameters()
@@ -190,6 +283,20 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         self.hidden_size_detected = True
         self.actual_hidden_size = actual_hidden_size
         
+        # SigLIP2 Contrastive Learning 설정
+        self.use_contrastive = use_contrastive
+        self.contrastive_weight = contrastive_weight
+        if self.use_contrastive:
+            self.contrastive_loss = SigLIP2ContrastiveLoss(
+                temperature=contrastive_temperature,
+                use_sigmoid=True  # SigLIP2 스타일
+            )
+            print(f"🔗 SigLIP2 Contrastive Learning 활성화:")
+            print(f"   가중치: Classification {(1-contrastive_weight)*100:.0f}% + Contrastive {contrastive_weight*100:.0f}%")
+            print(f"   온도: {contrastive_temperature}")
+        else:
+            self.contrastive_loss = None
+        
         # 언어 ID 매핑
         self.language_to_id = {
             'English': 0, 'Greek': 1, 'Korean': 2, 'Spanish': 3, 'French': 4,
@@ -228,7 +335,7 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             self.criterion = nn.CrossEntropyLoss()
             print("📊 Cross Entropy Loss 사용")
         
-    def forward(self, input_ids, attention_mask=None, pixel_values=None, pixel_attention_mask=None, spatial_shapes=None, language_ids=None):
+    def forward(self, input_ids, attention_mask=None, pixel_values=None, pixel_attention_mask=None, spatial_shapes=None, language_ids=None, return_embeddings=False):
         """순전파 - SigLIP2 네이티브 다국어 지원"""
         # SigLIP2 모델 통과 (모든 필요한 입력 포함)
         model_inputs = {
@@ -274,7 +381,65 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         
         # 분류
         logits = self.classifier(multimodal_embeddings)
-        return logits
+        
+        if return_embeddings:
+            # Contrastive learning을 위해 개별 임베딩들도 반환
+            return {
+                'logits': logits,
+                'audio_embeds': outputs.image_embeds if hasattr(outputs, 'image_embeds') else multimodal_embeddings,
+                'text_embeds': outputs.text_embeds if hasattr(outputs, 'text_embeds') else multimodal_embeddings,
+                'multimodal_embeds': multimodal_embeddings
+            }
+        else:
+            return logits
+    
+    def compute_loss(self, model_outputs, labels, patient_ids=None):
+        """손실 계산 - Classification + Contrastive"""
+        if isinstance(model_outputs, dict):
+            # Embeddings가 포함된 경우
+            logits = model_outputs['logits']
+            audio_embeds = model_outputs.get('audio_embeds')
+            text_embeds = model_outputs.get('text_embeds')
+        else:
+            # 단순 logits인 경우
+            logits = model_outputs
+            audio_embeds = None
+            text_embeds = None
+        
+        # Classification loss 계산
+        if self.hparams.loss_type == "bce":
+            labels_bce = labels.float()
+            logits_bce = logits[:, 1]
+            classification_loss = self.criterion(logits_bce, labels_bce)
+        else:
+            classification_loss = self.criterion(logits, labels)
+        
+        # Contrastive loss 계산 (사용하는 경우)
+        contrastive_metrics = {}
+        if (self.use_contrastive and audio_embeds is not None and 
+            text_embeds is not None and patient_ids is not None):
+            contrastive_results = self.contrastive_loss(audio_embeds, text_embeds, patient_ids)
+            contrastive_loss = contrastive_results['contrastive_loss']
+            
+            # 가중합으로 total loss 계산
+            total_loss = (1 - self.contrastive_weight) * classification_loss + \
+                        self.contrastive_weight * contrastive_loss
+            
+            # Contrastive 메트릭 저장
+            contrastive_metrics = {
+                'contrastive_loss': contrastive_loss,
+                'avg_positive_similarity': contrastive_results['avg_positive_similarity'],
+                'avg_negative_similarity': contrastive_results['avg_negative_similarity'],
+                'alignment_score': contrastive_results['alignment_score']
+            }
+        else:
+            total_loss = classification_loss
+        
+        return {
+            'total_loss': total_loss,
+            'classification_loss': classification_loss,
+            'contrastive_metrics': contrastive_metrics
+        }
     
     def training_step(self, batch, batch_idx):
         """훈련 스텝"""
@@ -288,33 +453,49 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         pixel_attention_mask = batch.get('pixel_attention_mask', None)
         spatial_shapes = batch.get('spatial_shapes', None)
         
-        # 순전파
-        logits = self(
+        # 순전파 (contrastive learning 사용 시 embeddings도 반환)
+        model_outputs = self(
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
             pixel_attention_mask=pixel_attention_mask,
             spatial_shapes=spatial_shapes,
-            language_ids=language_ids
+            language_ids=language_ids,
+            return_embeddings=self.use_contrastive
         )
         
+        # Patient IDs 추출 (contrastive learning용)
+        patient_ids = batch.get('patient_id', [f"patient_{i}" for i in range(len(batch['labels']))])
+        
         # 손실 계산
-        if self.hparams.loss_type == "bce":
-            # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
-            labels_bce = batch['labels'].float()
-            logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
-            loss = self.criterion(logits_bce, labels_bce)
+        loss_results = self.compute_loss(model_outputs, batch['labels'], patient_ids)
+        total_loss = loss_results['total_loss']
+        classification_loss = loss_results['classification_loss']
+        contrastive_metrics = loss_results['contrastive_metrics']
+        
+        # Logits 추출 (정확도 계산용)
+        if isinstance(model_outputs, dict):
+            logits = model_outputs['logits']
         else:
-            loss = self.criterion(logits, batch['labels'])
+            logits = model_outputs
         
         # 정확도 계산
         acc = self.train_accuracy(logits.softmax(dim=-1), batch['labels'])
         
-        # 로깅
-        self.log('train_loss', loss, prog_bar=True, batch_size=batch['input_ids'].size(0))
-        self.log('train_acc', acc, prog_bar=True, batch_size=batch['input_ids'].size(0))
+        # 기본 로깅
+        batch_size = batch['input_ids'].size(0)
+        self.log('train_loss', total_loss, prog_bar=True, batch_size=batch_size)
+        self.log('train_classification_loss', classification_loss, prog_bar=True, batch_size=batch_size)
+        self.log('train_acc', acc, prog_bar=True, batch_size=batch_size)
         
-        return loss
+        # Contrastive 메트릭 로깅
+        if contrastive_metrics:
+            self.log('train_contrastive_loss', contrastive_metrics['contrastive_loss'], prog_bar=True, batch_size=batch_size)
+            self.log('train_alignment_score', contrastive_metrics['alignment_score'], prog_bar=False, batch_size=batch_size)
+            self.log('train_positive_sim', contrastive_metrics['avg_positive_similarity'], prog_bar=False, batch_size=batch_size)
+            self.log('train_negative_sim', contrastive_metrics['avg_negative_similarity'], prog_bar=False, batch_size=batch_size)
+        
+        return total_loss
     
     def validation_step(self, batch, batch_idx):
         """검증 스텝"""
@@ -328,24 +509,31 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         pixel_attention_mask = batch.get('pixel_attention_mask', None)
         spatial_shapes = batch.get('spatial_shapes', None)
         
-        # 순전파
-        logits = self(
+        # 순전파 (contrastive learning 사용 시 embeddings도 반환)
+        model_outputs = self(
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
             pixel_attention_mask=pixel_attention_mask,
             spatial_shapes=spatial_shapes,
-            language_ids=language_ids
+            language_ids=language_ids,
+            return_embeddings=self.use_contrastive
         )
         
+        # Patient IDs 추출 (contrastive learning용)
+        patient_ids = batch.get('patient_id', [f"patient_{i}" for i in range(len(batch['labels']))])
+        
         # 손실 계산
-        if self.hparams.loss_type == "bce":
-            # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
-            labels_bce = batch['labels'].float()
-            logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
-            loss = self.criterion(logits_bce, labels_bce)
+        loss_results = self.compute_loss(model_outputs, batch['labels'], patient_ids)
+        total_loss = loss_results['total_loss']
+        classification_loss = loss_results['classification_loss']
+        contrastive_metrics = loss_results['contrastive_metrics']
+        
+        # Logits 추출 (정확도 계산용)
+        if isinstance(model_outputs, dict):
+            logits = model_outputs['logits']
         else:
-            loss = self.criterion(logits, batch['labels'])
+            logits = model_outputs
         
         # 정확도 계산
         acc = self.val_accuracy(logits.softmax(dim=-1), batch['labels'])
@@ -355,14 +543,22 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             'logits': logits,
             'labels': batch['labels'],
             'languages': batch['language'],  # 언어별 분석용
-            'loss': loss
+            'loss': total_loss,
+            'contrastive_metrics': contrastive_metrics
         })
         
-        # 로깅
-        self.log('val_loss', loss, prog_bar=True, batch_size=batch['input_ids'].size(0))
-        self.log('val_acc', acc, prog_bar=True, batch_size=batch['input_ids'].size(0))
+        # 기본 로깅
+        batch_size = batch['input_ids'].size(0)
+        self.log('val_loss', total_loss, prog_bar=True, batch_size=batch_size)
+        self.log('val_classification_loss', classification_loss, prog_bar=True, batch_size=batch_size)
+        self.log('val_acc', acc, prog_bar=True, batch_size=batch_size)
         
-        return loss
+        # Contrastive 메트릭 로깅
+        if contrastive_metrics:
+            self.log('val_contrastive_loss', contrastive_metrics['contrastive_loss'], prog_bar=True, batch_size=batch_size)
+            self.log('val_alignment_score', contrastive_metrics['alignment_score'], prog_bar=False, batch_size=batch_size)
+        
+        return total_loss
     
     def test_step(self, batch, batch_idx):
         """테스트 스텝"""
@@ -376,26 +572,33 @@ class SigLIPDementiaClassifier(pl.LightningModule):
         pixel_attention_mask = batch.get('pixel_attention_mask', None)
         spatial_shapes = batch.get('spatial_shapes', None)
         
-        # 순전파
-        logits = self(
+        # 순전파 (contrastive learning 사용 시 embeddings도 반환)
+        model_outputs = self(
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
             pixel_attention_mask=pixel_attention_mask,
             spatial_shapes=spatial_shapes,
-            language_ids=language_ids
+            language_ids=language_ids,
+            return_embeddings=self.use_contrastive
         )
         
+        # Patient IDs 추출 (contrastive learning용)
+        patient_ids = batch.get('patient_id', [f"patient_{i}" for i in range(len(batch['labels']))])
+        
         # 손실 계산 (criterion이 있는 경우만)
-        loss = None
+        total_loss = None
+        contrastive_metrics = {}
         if hasattr(self, 'criterion') and self.criterion is not None:
-            if self.hparams.loss_type == "bce":
-                # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
-                labels_bce = batch['labels'].float()
-                logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
-                loss = self.criterion(logits_bce, labels_bce)
-            else:
-                loss = self.criterion(logits, batch['labels'])
+            loss_results = self.compute_loss(model_outputs, batch['labels'], patient_ids)
+            total_loss = loss_results['total_loss']
+            contrastive_metrics = loss_results['contrastive_metrics']
+        
+        # Logits 추출
+        if isinstance(model_outputs, dict):
+            logits = model_outputs['logits']
+        else:
+            logits = model_outputs
         
         # 정확도 계산
         acc = self.test_accuracy(logits.softmax(dim=-1), batch['labels'])
@@ -415,15 +618,22 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             'logits': logits,
             'labels': batch['labels'],
             'languages': batch['language'],  # 언어별 분석용
-            'loss': loss
+            'loss': total_loss,
+            'contrastive_metrics': contrastive_metrics
         })
         
-        # 로깅 (loss가 있는 경우만)
-        if loss is not None:
-            self.log('test_loss', loss, prog_bar=True, batch_size=batch['input_ids'].size(0))
-        self.log('test_acc', acc, prog_bar=True, batch_size=batch['input_ids'].size(0))
+        # 로깅
+        batch_size = batch['input_ids'].size(0)
+        if total_loss is not None:
+            self.log('test_loss', total_loss, prog_bar=True, batch_size=batch_size)
+        self.log('test_acc', acc, prog_bar=True, batch_size=batch_size)
         
-        return loss
+        # Contrastive 메트릭 로깅
+        if contrastive_metrics:
+            self.log('test_contrastive_loss', contrastive_metrics['contrastive_loss'], prog_bar=False, batch_size=batch_size)
+            self.log('test_alignment_score', contrastive_metrics['alignment_score'], prog_bar=False, batch_size=batch_size)
+        
+        return total_loss
     
     def on_validation_epoch_start(self):
         """검증 에포크 시작 시"""
@@ -843,7 +1053,10 @@ def create_model(config) -> SigLIPDementiaClassifier:
         focal_alpha=config.focal_alpha,
         focal_gamma=config.focal_gamma,
         optimizer_type=config.optimizer_type,
-        sam_rho=config.sam_rho
+        sam_rho=config.sam_rho,
+        use_contrastive=getattr(config, 'use_contrastive', False),
+        contrastive_weight=getattr(config, 'contrastive_weight', 0.5),
+        contrastive_temperature=getattr(config, 'contrastive_temperature', 0.07)
     )
 
 def create_callbacks(training_config, checkpoint_dir):

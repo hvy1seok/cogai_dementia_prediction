@@ -259,6 +259,11 @@ def main():
                        choices=["adamw", "lion", "sam"],
                        help="옵티마이저 타입 (adamw, lion, sam)")
     parser.add_argument("--sam_rho", type=float, default=0.05, help="SAM rho 파라미터")
+    # SigLIP2 Contrastive Learning 옵션
+    parser.add_argument("--use_contrastive", action="store_true", help="SigLIP2 Contrastive Learning 사용")
+    parser.add_argument("--no_contrastive", action="store_true", help="SigLIP2 Contrastive Learning 비사용 (명시적)")
+    parser.add_argument("--contrastive_weight", type=float, default=0.5, help="Contrastive vs Classification loss 가중치")
+    parser.add_argument("--contrastive_temperature", type=float, default=0.07, help="Contrastive learning 온도 파라미터")
     
     args = parser.parse_args()
     
@@ -294,6 +299,16 @@ def main():
         config.optimizer_type = args.optimizer_type
     if args.sam_rho:
         config.sam_rho = args.sam_rho
+    
+    # SigLIP2 Contrastive Learning 설정
+    if args.use_contrastive:
+        config.use_contrastive = True
+    elif args.no_contrastive:
+        config.use_contrastive = False
+    if args.contrastive_weight:
+        config.contrastive_weight = args.contrastive_weight
+    if args.contrastive_temperature:
+        config.contrastive_temperature = args.contrastive_temperature
     
     # 언어 파서 설정
     if args.parser == "cross_lingual":

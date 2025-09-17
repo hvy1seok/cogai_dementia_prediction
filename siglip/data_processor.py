@@ -186,6 +186,9 @@ class DementiaDataset(Dataset):
         inputs['labels'] = torch.tensor(item['label'], dtype=torch.long)
         inputs['language'] = item['language']
         
+        # Patient ID 추가 (contrastive learning용)
+        inputs['patient_id'] = item.get('patient_id', item['file_id'])
+        
         return inputs
 
 def create_stratified_split(dataset, train_split: float = 0.7, val_split: float = 0.1, test_split: float = 0.2, random_seed: int = 42):

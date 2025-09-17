@@ -38,6 +38,24 @@ class SigLIPConfig:
     optimizer_type: str = "adamw"     # "adamw", "lion", "sam"
     sam_rho: float = 0.05             # SAM rho 파라미터
     
+    # SigLIP2 Contrastive Learning 설정
+    use_contrastive: bool = False     # Contrastive learning 사용 여부
+    contrastive_weight: float = 0.5   # Classification vs Contrastive loss 가중치
+    contrastive_temperature: float = 0.07  # Contrastive learning 온도 파라미터
+    
+    # 진정한 SigLIP2 설정
+    ema_momentum: float = 0.999           # EMA Teacher momentum
+    silc_weight: float = 0.2              # SILC/TIPS Loss 가중치 (20%)
+    sigmoid_weight: float = 1.0           # Sigmoid Contrastive Loss 가중치 (100%)
+    loca_weight: float = 1.0              # LoCa Caption Loss 가중치 (100%)
+    classification_weight: float = 1.0    # Classification Loss 가중치 (100%)
+    mask_ratio: float = 0.15              # Masked prediction 비율
+    decoder_hidden_dim: int = 512         # Auto-regressive decoder hidden dimension
+    decoder_num_heads: int = 8            # Decoder attention heads
+    decoder_num_layers: int = 6           # Decoder layers
+    vocab_size: int = 30522               # Vocabulary size
+    max_caption_length: int = 77          # Maximum caption length
+    
     # 데이터 설정
     train_split: float = 0.7
     val_split: float = 0.1
