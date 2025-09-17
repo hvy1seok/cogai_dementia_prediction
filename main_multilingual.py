@@ -72,7 +72,7 @@ def main():
     parser = argparse.ArgumentParser(description="다국어 멀티모달 치매 진단 모델")
     
     # 데이터 관련 설정
-    parser.add_argument('--data_dir', type=str, default='training_dset', 
+    parser.add_argument('--data_dir', type=str, default='../training_dset', 
                        help='데이터 디렉토리 경로')
     parser.add_argument('--max_seq_len', type=int, default=512, 
                        help='최대 시퀀스 길이')

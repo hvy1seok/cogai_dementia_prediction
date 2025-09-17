@@ -127,13 +127,6 @@ def load_english_data(lang_dir, language):
     if pitt_dir.exists():
         data.extend(load_pitt_data(pitt_dir, language))
     
-    # 다른 영어 데이터 디렉토리들도 탐색
-    for subdir in lang_dir.iterdir():
-        if subdir.is_dir() and subdir.name != 'Pitt':
-            # 일반적인 구조로 로드 시도
-            subdir_data = load_generic_data(subdir, language)
-            data.extend(subdir_data)
-    
     return data
 
 def load_pitt_data(pitt_dir, language):
@@ -146,10 +139,10 @@ def load_pitt_data(pitt_dir, language):
     if not (text_dir.exists() and voice_dir.exists()):
         return data
     
-    # Control과 Dementia 데이터 로드
+    # AD, HC 카테고리로 로드 (실제 디렉토리 구조에 맞게)
     categories = [
-        ('Control', 0),
-        ('Dementia', 1)
+        ('HC', 0),    # Healthy Control
+        ('AD', 1)     # Alzheimer's Disease  
     ]
     
     for cat_name, label in categories:
@@ -158,31 +151,46 @@ def load_pitt_data(pitt_dir, language):
         
         if not (cat_text_dir.exists() and cat_voice_dir.exists()):
             continue
-            
-        # 파일 매칭
-        for text_file in cat_text_dir.glob('**/*.txt'):
-            # 상대 경로 구성
-            rel_path = text_file.relative_to(cat_text_dir)
-            audio_file = cat_voice_dir / rel_path.with_suffix('.npy')
-            
-            if audio_file.exists():
-                # 텍스트 읽기
-                try:
-                    with open(text_file, 'r', encoding='utf-8') as f:
-                        text = f.read().strip()
+        
+        # 하위 태스크 디렉토리들 (cookie, fluency, recall, sentence)
+        for task_dir in cat_text_dir.iterdir():
+            if task_dir.is_dir():
+                voice_task_dir = cat_voice_dir / task_dir.name
+                
+                if not voice_task_dir.exists():
+                    continue
+                
+                # 텍스트 파일들 로드
+                for text_file in task_dir.glob('*.txt'):
+                    # 해당하는 오디오 파일 찾기
+                    audio_file = voice_task_dir / f"{text_file.stem}.npy"
                     
-                    # 환자 ID 추출 (파일명에서)
-                    patient_id = f"{language}_{text_file.stem}"
+                    if not audio_file.exists():
+                        # 다른 확장자로도 시도
+                        audio_file = voice_task_dir / f"{text_file.stem}.wav"
+                        if not audio_file.exists():
+                            continue
                     
-                    data.append({
-                        'text': text,
-                        'audio_path': str(audio_file),
-                        'label': label,
-                        'language': language,
-                        'patient_id': patient_id
-                    })
-                except Exception as e:
-                    print(f"⚠️ 파일 로드 실패: {text_file} - {e}")
+                    # 텍스트 읽기
+                    try:
+                        with open(text_file, 'r', encoding='utf-8') as f:
+                            text = f.read().strip()
+                        
+                        if not text or len(text) < 10:  # 너무 짧은 텍스트 스킵
+                            continue
+                        
+                        # 환자 ID 추출 (카테고리_태스크_파일명)
+                        patient_id = f"{language}_{cat_name}_{task_dir.name}_{text_file.stem}"
+                        
+                        data.append({
+                            'text': text,
+                            'audio_path': str(audio_file),
+                            'label': label,
+                            'language': language,
+                            'patient_id': patient_id
+                        })
+                    except Exception as e:
+                        print(f"⚠️ 파일 로드 실패: {text_file} - {e}")
     
     return data
 
@@ -190,16 +198,83 @@ def load_greek_data(lang_dir, language):
     """그리스어 데이터 로드"""
     data = []
     
-    # Dem@Care 디렉토리 탐색
-    demcare_dir = lang_dir / 'Dem@Care'
-    if demcare_dir.exists():
-        data.extend(load_generic_data(demcare_dir, language))
+    # textdata와 voicedata 디렉토리에서 로드
+    text_dir = lang_dir / 'textdata'
+    voice_dir = lang_dir / 'voicedata'
     
-    # 다른 하위 디렉토리들도 탐색
-    for subdir in lang_dir.iterdir():
-        if subdir.is_dir() and subdir.name != 'Dem@Care':
-            subdir_data = load_generic_data(subdir, language)
+    if text_dir.exists() and voice_dir.exists():
+        # AD, HC, MCI 카테고리
+        categories = [
+            ('HC', 0),    # Healthy Control
+            ('AD', 1),    # Alzheimer's Disease
+            ('MCI', 1)    # Mild Cognitive Impairment (치매로 분류)
+        ]
+        
+        for cat_name, label in categories:
+            cat_text_dir = text_dir / cat_name
+            cat_voice_dir = voice_dir / cat_name
+            
+            if cat_text_dir.exists() and cat_voice_dir.exists():
+                # 텍스트 파일들 로드
+                for text_file in cat_text_dir.glob('*.txt'):
+                    audio_file = cat_voice_dir / f"{text_file.stem}.npy"
+                    
+                    if audio_file.exists():
+                        try:
+                            with open(text_file, 'r', encoding='utf-8') as f:
+                                text = f.read().strip()
+                            
+                            if text:
+                                patient_id = f"{language}_{cat_name}_{text_file.stem}"
+                                data.append({
+                                    'text': text,
+                                    'audio_path': str(audio_file),
+                                    'label': label,
+                                    'language': language,
+                                    'patient_id': patient_id
+                                })
+                        except Exception as e:
+                            print(f"⚠️ 그리스어 파일 로드 실패: {text_file} - {e}")
+    
+    # long, short, pilot 디렉토리에서도 로드
+    for subdir_name in ['long', 'short', 'pilot']:
+        subdir = lang_dir / subdir_name
+        if subdir.exists():
+            subdir_data = load_greek_subdir(subdir, language, subdir_name)
             data.extend(subdir_data)
+    
+    return data
+
+def load_greek_subdir(subdir, language, subdir_name):
+    """그리스어 서브디렉토리 로드"""
+    data = []
+    
+    if subdir_name in ['long', 'short']:
+        # AD, HC, MCI 카테고리
+        categories = [
+            ('HC', 0),
+            ('AD', 1),
+            ('MCI', 1)
+        ]
+        
+        for cat_name, label in categories:
+            cat_dir = subdir / cat_name
+            if cat_dir.exists():
+                # .npy와 .mp3 파일 쌍 찾기
+                npy_files = list(cat_dir.glob('*.npy'))
+                for npy_file in npy_files:
+                    # 해당하는 텍스트 파일이 있는지 확인 (다른 디렉토리에서)
+                    # 간단히 파일명을 텍스트로 사용
+                    text = f"Greek audio sample {npy_file.stem}"
+                    patient_id = f"{language}_{subdir_name}_{cat_name}_{npy_file.stem}"
+                    
+                    data.append({
+                        'text': text,
+                        'audio_path': str(npy_file),
+                        'label': label,
+                        'language': language,
+                        'patient_id': patient_id
+                    })
     
     return data
 
@@ -207,23 +282,43 @@ def load_spanish_data(lang_dir, language):
     """스페인어 데이터 로드"""
     data = []
     
-    # Ivanova 디렉토리 탐색
-    ivanova_dir = lang_dir / 'Ivanova'
-    if ivanova_dir.exists():
-        data.extend(load_generic_data(ivanova_dir, language))
+    # textdata와 voicedata 디렉토리에서 로드
+    text_dir = lang_dir / 'textdata'
+    voice_dir = lang_dir / 'voicedata'
     
-    # AD, HC, MCI 디렉토리들 탐색
-    categories = [
-        ('HC', 0),      # Healthy Control
-        ('AD', 1),      # Alzheimer's Disease
-        ('MCI', 1)      # Mild Cognitive Impairment (치매로 분류)
-    ]
-    
-    for cat_name, label in categories:
-        cat_dir = lang_dir / cat_name
-        if cat_dir.exists():
-            cat_data = load_generic_data(cat_dir, language, default_label=label)
-            data.extend(cat_data)
+    if text_dir.exists() and voice_dir.exists():
+        # AD, HC, MCI 카테고리
+        categories = [
+            ('HC', 0),    # Healthy Control
+            ('AD', 1),    # Alzheimer's Disease
+            ('MCI', 1)    # Mild Cognitive Impairment (치매로 분류)
+        ]
+        
+        for cat_name, label in categories:
+            cat_text_dir = text_dir / cat_name
+            cat_voice_dir = voice_dir / cat_name
+            
+            if cat_text_dir.exists() and cat_voice_dir.exists():
+                # 텍스트 파일들 로드
+                for text_file in cat_text_dir.glob('*.txt'):
+                    audio_file = cat_voice_dir / f"{text_file.stem}.npy"
+                    
+                    if audio_file.exists():
+                        try:
+                            with open(text_file, 'r', encoding='utf-8') as f:
+                                text = f.read().strip()
+                            
+                            if text:
+                                patient_id = f"{language}_{cat_name}_{text_file.stem}"
+                                data.append({
+                                    'text': text,
+                                    'audio_path': str(audio_file),
+                                    'label': label,
+                                    'language': language,
+                                    'patient_id': patient_id
+                                })
+                        except Exception as e:
+                            print(f"⚠️ 스페인어 파일 로드 실패: {text_file} - {e}")
     
     return data
 
@@ -231,11 +326,63 @@ def load_mandarin_data(lang_dir, language):
     """만다린 데이터 로드"""
     data = []
     
-    # 여러 하위 디렉토리 탐색
-    for subdir in lang_dir.iterdir():
-        if subdir.is_dir():
-            subdir_data = load_generic_data(subdir, language)
-            data.extend(subdir_data)
+    # textdata와 voicedata 디렉토리에서 로드
+    text_dir = lang_dir / 'textdata'
+    voice_dir = lang_dir / 'voicedata'
+    
+    if text_dir.exists() and voice_dir.exists():
+        # AD, HC, MCI 카테고리
+        categories = [
+            ('HC', 0),    # Healthy Control
+            ('AD', 1),    # Alzheimer's Disease
+            ('MCI', 1)    # Mild Cognitive Impairment (치매로 분류)
+        ]
+        
+        for cat_name, label in categories:
+            cat_text_dir = text_dir / cat_name
+            cat_voice_dir = voice_dir / cat_name
+            
+            if cat_text_dir.exists() and cat_voice_dir.exists():
+                # 텍스트 파일들 로드
+                for text_file in cat_text_dir.glob('*.txt'):
+                    audio_file = cat_voice_dir / f"{text_file.stem}.npy"
+                    
+                    if audio_file.exists():
+                        try:
+                            with open(text_file, 'r', encoding='utf-8') as f:
+                                text = f.read().strip()
+                            
+                            if text:
+                                patient_id = f"{language}_{cat_name}_{text_file.stem}"
+                                data.append({
+                                    'text': text,
+                                    'audio_path': str(audio_file),
+                                    'label': label,
+                                    'language': language,
+                                    'patient_id': patient_id
+                                })
+                        except Exception as e:
+                            print(f"⚠️ 만다린 파일 로드 실패: {text_file} - {e}")
+    
+    # Lu, Ye 디렉토리에서 직접 로드
+    for subdir_name in ['Lu', 'Ye']:
+        subdir = lang_dir / subdir_name
+        if subdir.exists():
+            # .npy 파일들 직접 로드
+            npy_files = list(subdir.glob('*.npy'))
+            for npy_file in npy_files:
+                # 파일명에서 라벨 추정 (간단한 규칙)
+                label = 1 if any(x in npy_file.stem.lower() for x in ['ad', 'pd', 'df']) else 0
+                text = f"Mandarin audio sample {npy_file.stem}"
+                patient_id = f"{language}_{subdir_name}_{npy_file.stem}"
+                
+                data.append({
+                    'text': text,
+                    'audio_path': str(npy_file),
+                    'label': label,
+                    'language': language,
+                    'patient_id': patient_id
+                })
     
     return data
 

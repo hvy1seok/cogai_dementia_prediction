@@ -5,7 +5,7 @@ echo "=== 다국어 멀티모달 치매 진단 모델 - 전체 언어 실험 ===
 echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 
 # 기본 설정
-DATA_DIR="training_dset"
+DATA_DIR="../training_dset"
 MAX_SEQ_LEN=512
 BATCH_SIZE=16
 NUM_EPOCHS=50
