@@ -119,12 +119,21 @@ def load_language_data(lang_dir, language):
     return data
 
 def load_english_data(lang_dir, language):
-    """영어 데이터 로드 (다른 언어와 동일한 구조)"""
+    """영어 데이터 로드 (siglip 파서와 동일한 구조 지원)"""
     data = []
     
-    # textdata와 voicedata 디렉토리에서 직접 로드
+    print(f"🔍 영어 파서 디버깅:")
+    print(f"  lang_dir: {lang_dir}")
+    print(f"  lang_dir 존재여부: {lang_dir.exists()}")
+    
+    # textdata와 voicedata 디렉토리에서 로드
     text_dir = lang_dir / 'textdata'
     voice_dir = lang_dir / 'voicedata'
+    
+    print(f"  textdata_dir: {text_dir}")
+    print(f"  textdata_dir 존재여부: {text_dir.exists()}")
+    print(f"  voicedata_dir: {voice_dir}")
+    print(f"  voicedata_dir 존재여부: {voice_dir.exists()}")
     
     if text_dir.exists() and voice_dir.exists():
         # AD, HC 카테고리만 사용
@@ -137,27 +146,91 @@ def load_english_data(lang_dir, language):
             cat_text_dir = text_dir / cat_name
             cat_voice_dir = voice_dir / cat_name
             
+            print(f"  {cat_name} 폴더 확인:")
+            print(f"    text_cat_dir: {cat_text_dir} (존재: {cat_text_dir.exists()})")
+            print(f"    voice_cat_dir: {cat_voice_dir} (존재: {cat_voice_dir.exists()})")
+            
             if cat_text_dir.exists() and cat_voice_dir.exists():
-                # 텍스트 파일들 로드
-                for text_file in cat_text_dir.glob('*.txt'):
-                    audio_file = cat_voice_dir / f"{text_file.stem}.npy"
+                # 직접 .txt 파일들 확인
+                txt_files = list(cat_text_dir.glob("*.txt"))
+                print(f"    {cat_name}에서 찾은 .txt 파일 개수: {len(txt_files)}")
+                
+                # 직접 파일이 없으면 하위 폴더들 확인 (Pitt 구조 대응)
+                if len(txt_files) == 0:
+                    print(f"    직접 .txt 파일이 없음. 하위 폴더들 확인...")
+                    subfolders = [item for item in cat_text_dir.iterdir() if item.is_dir()]
+                    print(f"    하위 폴더 개수: {len(subfolders)}")
                     
-                    if audio_file.exists():
-                        try:
-                            with open(text_file, 'r', encoding='utf-8') as f:
-                                text = f.read().strip()
+                    for subfolder in subfolders:
+                        voice_subfolder = cat_voice_dir / subfolder.name
+                        if not voice_subfolder.exists():
+                            print(f"      ⚠️ 대응하는 음성 하위 폴더 없음: {voice_subfolder}")
+                            continue
+                        
+                        print(f"      하위폴더: {subfolder.name}")
+                        sub_txt_files = list(subfolder.glob("*.txt"))
+                        print(f"        .txt 파일 개수: {len(sub_txt_files)}")
+                        
+                        for txt_file in sub_txt_files:
+                            # tasks 파일은 제외 (메타데이터 파일)
+                            if "tasks" in txt_file.stem:
+                                continue
                             
-                            if text and len(text) >= 10:  # 최소 길이 체크
-                                patient_id = f"{language}_{cat_name}_{text_file.stem}"
-                                data.append({
-                                    'text': text,
-                                    'audio_path': str(audio_file),
-                                    'label': label,
-                                    'language': language,
-                                    'patient_id': patient_id
-                                })
-                        except Exception as e:
-                            print(f"⚠️ 영어 파일 로드 실패: {text_file} - {e}")
+                            stem = txt_file.stem
+                            npy_file = voice_subfolder / f"{stem}.npy"
+                            
+                            if npy_file.exists():
+                                try:
+                                    with open(txt_file, 'r', encoding='utf-8') as f:
+                                        text = f.read().strip()
+                                    
+                                    if text:
+                                        patient_id = f"{language}_{cat_name}_{subfolder.name}_{txt_file.stem}"
+                                        data.append({
+                                            'text': text,
+                                            'audio_path': str(npy_file),
+                                            'label': label,
+                                            'language': language,
+                                            'patient_id': patient_id
+                                        })
+                                except Exception as e:
+                                    print(f"        파싱 오류 {txt_file}: {e}")
+                            else:
+                                print(f"        ⚠️ 매칭되는 .npy 파일 없음: {npy_file}")
+                else:
+                    # 직접 구조 처리
+                    for txt_file in txt_files:
+                        # tasks 파일은 제외 (메타데이터 파일)
+                        if "tasks" in txt_file.stem:
+                            continue
+                        
+                        # 대응하는 .npy 파일 찾기
+                        npy_file = cat_voice_dir / f"{txt_file.stem}.npy"
+                        
+                        if npy_file.exists():
+                            try:
+                                # 텍스트 읽기
+                                with open(txt_file, 'r', encoding='utf-8') as f:
+                                    text = f.read().strip()
+                                
+                                if text:  # 텍스트가 비어있지 않은 경우만
+                                    patient_id = f"{language}_{cat_name}_{txt_file.stem}"
+                                    data.append({
+                                        'text': text,
+                                        'audio_path': str(npy_file),
+                                        'label': label,
+                                        'language': language,
+                                        'patient_id': patient_id
+                                    })
+                            
+                            except Exception as e:
+                                print(f"파싱 오류 {txt_file}: {e}")
+                        else:
+                            print(f"⚠️ 매칭되는 음성 파일 없음: {npy_file}")
+            else:
+                print(f"⚠️ {language}: {cat_name} 폴더가 없습니다.")
+    else:
+        print(f"⚠️ {language}: textdata 또는 voicedata 폴더가 없습니다.")
     
     return data
 
