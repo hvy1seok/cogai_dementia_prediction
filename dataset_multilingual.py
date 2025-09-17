@@ -119,13 +119,51 @@ def load_language_data(lang_dir, language):
     return data
 
 def load_english_data(lang_dir, language):
-    """영어 데이터 로드 (Pitt 코퍼스 기반)"""
+    """영어 데이터 로드"""
     data = []
     
-    # Pitt 디렉토리 탐색
+    # textdata와 voicedata 디렉토리에서 직접 로드 (다른 언어와 동일한 구조)
+    text_dir = lang_dir / 'textdata'
+    voice_dir = lang_dir / 'voicedata'
+    
+    if text_dir.exists() and voice_dir.exists():
+        # AD, HC 카테고리
+        categories = [
+            ('HC', 0),    # Healthy Control
+            ('AD', 1)     # Alzheimer's Disease
+        ]
+        
+        for cat_name, label in categories:
+            cat_text_dir = text_dir / cat_name
+            cat_voice_dir = voice_dir / cat_name
+            
+            if cat_text_dir.exists() and cat_voice_dir.exists():
+                # 텍스트 파일들 로드
+                for text_file in cat_text_dir.glob('*.txt'):
+                    audio_file = cat_voice_dir / f"{text_file.stem}.npy"
+                    
+                    if audio_file.exists():
+                        try:
+                            with open(text_file, 'r', encoding='utf-8') as f:
+                                text = f.read().strip()
+                            
+                            if text and len(text) >= 10:  # 최소 길이 체크
+                                patient_id = f"{language}_{cat_name}_{text_file.stem}"
+                                data.append({
+                                    'text': text,
+                                    'audio_path': str(audio_file),
+                                    'label': label,
+                                    'language': language,
+                                    'patient_id': patient_id
+                                })
+                        except Exception as e:
+                            print(f"⚠️ 영어 파일 로드 실패: {text_file} - {e}")
+    
+    # Pitt 디렉토리도 있다면 추가로 로드
     pitt_dir = lang_dir / 'Pitt'
     if pitt_dir.exists():
-        data.extend(load_pitt_data(pitt_dir, language))
+        pitt_data = load_pitt_data(pitt_dir, language)
+        data.extend(pitt_data)
     
     return data
 
