@@ -255,12 +255,18 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
     
     if test_split == 0.0:
         # Cross-lingual 모드: train/val만 분할 (test는 다른 언어)
-        train_patient_indices, val_patient_indices = train_test_split(
-            patient_indices_list,
-            test_size=val_split / (train_split + val_split),  # val 비율 조정
-            stratify=patient_stratify_keys,
-            random_state=random_seed
-        )
+        if train_split == 0.0:
+            # train_split=0인 경우: 모든 데이터를 val로 사용 (Zero-shot에서 타겟 언어용)
+            val_patient_indices = patient_indices_list  # 모든 환자를 val로 사용
+            train_patient_indices = []  # 빈 리스트
+        else:
+            # 일반적인 train/val 분할
+            train_patient_indices, val_patient_indices = train_test_split(
+                patient_indices_list,
+                test_size=val_split / (train_split + val_split),  # val 비율 조정
+                stratify=patient_stratify_keys,
+                random_state=random_seed
+            )
         test_patient_indices = []  # 빈 리스트
     else:
         # 일반 모드: train/val/test 3-way 분할
@@ -433,16 +439,7 @@ def create_dataloaders(data_dir: str,
             languages=test_languages
         )
         
-        # 타겟 언어를 val:test = 1:1로 분할 (zero-shot validation & test)
-        target_indices, _, _ = create_stratified_split(
-            target_full_dataset,
-            train_split=0.0,    # 훈련에는 사용하지 않음
-            val_split=0.5,      # 절반은 validation (zero-shot)
-            test_split=0.5,     # 절반은 test (zero-shot)
-            random_seed=config.random_seed
-        )
-        
-        # 타겟 언어 인덱스를 val/test로 분할
+        # 타겟 언어를 val:test = 1:1로 직접 분할 (zero-shot validation & test)
         target_all_indices = list(range(len(target_full_dataset)))
         target_val_indices, target_test_indices = train_test_split(
             target_all_indices,
