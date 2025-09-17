@@ -1,21 +1,85 @@
 #!/bin/bash
-# SigLIP-SAM Cross-Lingual 치매 진단 모델 훈련
-# 훈련: 영어, 스페인어, 만다린 / 테스트: 그리스어 (SAM 옵티마이저 사용)
+# SigLIP-SAM Cross-Lingual 치매 진단 모델 훈련 (SAM 옵티마이저 사용)
+# 다양한 언어 조합으로 Cross-lingual 성능 평가
 
 echo "=== SigLIP-SAM Cross-Lingual 치매 진단 모델 훈련 시작 ==="
 echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 
-# 설정
+# 기본 설정
 DATA_DIR="../../training_dset"
-OUTPUT_DIR="../modules/outputs/siglip-sam/CrossLingual_Train_English_Spanish_Mandarin_Test_Greek_SAM"
 MODEL_NAME="google/siglip2-base-patch16-naflex"
 BATCH_SIZE=32
 LEARNING_RATE=2e-5
 NUM_EPOCHS=100
 
-# Cross-lingual 언어 설정
-TRAIN_LANGUAGES=("English" "Spanish" "Mandarin")
-TEST_LANGUAGES=("Greek")
+# SAM 설정
+OPTIMIZER_TYPE="sam"
+SAM_RHO=0.05
+LOSS_TYPE="focal"
+
+# =================================
+# Cross-lingual 언어 조합 설정
+# =================================
+# 사용 가능한 언어: English, Greek, Spanish, Mandarin
+
+# 조합 1: 영어+스페인어+만다린 → 그리스어 (기본)
+TRAIN_LANGUAGES_1=("English" "Spanish" "Mandarin")
+TEST_LANGUAGES_1=("Greek")
+
+# 조합 2: 영어+그리스어+만다린 → 스페인어
+TRAIN_LANGUAGES_2=("English" "Greek" "Mandarin")
+TEST_LANGUAGES_2=("Spanish")
+
+# 조합 3: 영어+그리스어+스페인어 → 만다린
+TRAIN_LANGUAGES_3=("English" "Greek" "Spanish")
+TEST_LANGUAGES_3=("Mandarin")
+
+# 조합 4: 그리스어+스페인어+만다린 → 영어
+TRAIN_LANGUAGES_4=("Greek" "Spanish" "Mandarin")
+TEST_LANGUAGES_4=("English")
+
+# =================================
+# 실행할 조합 선택 (기본값: 조합 1)
+# =================================
+# 다른 조합을 사용하려면 아래 숫자를 변경하세요 (1, 2, 3, 4)
+EXPERIMENT_NUM=${1:-1}  # 명령행 인수로 조합 선택 가능
+
+case $EXPERIMENT_NUM in
+    1)
+        TRAIN_LANGUAGES=("${TRAIN_LANGUAGES_1[@]}")
+        TEST_LANGUAGES=("${TEST_LANGUAGES_1[@]}")
+        EXPERIMENT_NAME="Train_English_Spanish_Mandarin_Test_Greek"
+        ;;
+    2)
+        TRAIN_LANGUAGES=("${TRAIN_LANGUAGES_2[@]}")
+        TEST_LANGUAGES=("${TEST_LANGUAGES_2[@]}")
+        EXPERIMENT_NAME="Train_English_Greek_Mandarin_Test_Spanish"
+        ;;
+    3)
+        TRAIN_LANGUAGES=("${TRAIN_LANGUAGES_3[@]}")
+        TEST_LANGUAGES=("${TEST_LANGUAGES_3[@]}")
+        EXPERIMENT_NAME="Train_English_Greek_Spanish_Test_Mandarin"
+        ;;
+    4)
+        TRAIN_LANGUAGES=("${TRAIN_LANGUAGES_4[@]}")
+        TEST_LANGUAGES=("${TEST_LANGUAGES_4[@]}")
+        EXPERIMENT_NAME="Train_Greek_Spanish_Mandarin_Test_English"
+        ;;
+    *)
+        echo "❌ 잘못된 실험 번호입니다. 1-4 중 선택하세요."
+        echo "사용법: bash train_sam_cross_lingual.sh [1|2|3|4]"
+        echo ""
+        echo "🌍 사용 가능한 조합:"
+        echo "  1: 영어+스페인어+만다린 → 그리스어 (기본)"
+        echo "  2: 영어+그리스어+만다린 → 스페인어"
+        echo "  3: 영어+그리스어+스페인어 → 만다린"
+        echo "  4: 그리스어+스페인어+만다린 → 영어"
+        exit 1
+        ;;
+esac
+
+# 출력 디렉토리 설정
+OUTPUT_DIR="../modules/outputs/siglip-sam/CrossLingual_${EXPERIMENT_NAME}_SAM"
 
 # SAM 설정
 OPTIMIZER_TYPE="sam"
@@ -27,7 +91,8 @@ mkdir -p "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR/checkpoints"
 
 echo ""
-echo "🌍 SAM Cross-Lingual 훈련 설정:"
+echo "🌍 SAM Cross-Lingual 훈련 설정 (실험 $EXPERIMENT_NUM):"
+echo "  실험명: $EXPERIMENT_NAME"
 echo "  훈련 언어: ${TRAIN_LANGUAGES[*]}"
 echo "  테스트 언어: ${TEST_LANGUAGES[*]}"
 echo "  데이터 디렉토리: $DATA_DIR"
@@ -54,7 +119,8 @@ fi
 echo "Python 명령어: $PYTHON_CMD"
 echo ""
 
-echo "SAM Cross-Lingual 모델 훈련 시작..."
+echo "SAM Cross-Lingual 모델 훈련 시작 (실험 $EXPERIMENT_NUM)..."
+echo "실험: ${TRAIN_LANGUAGES[*]} → ${TEST_LANGUAGES[*]}"
 echo "================================"
 
 # 훈련 실행
@@ -79,7 +145,8 @@ if [ $? -eq 0 ]; then
     echo "완료 시간: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "모델 저장 위치: $OUTPUT_DIR/checkpoints"
     echo ""
-    echo "🌍 훈련 언어: ${TRAIN_LANGUAGES[*]}"
+    echo "🌍 실험 $EXPERIMENT_NUM: $EXPERIMENT_NAME"
+    echo "🎯 훈련 언어: ${TRAIN_LANGUAGES[*]}"
     echo "🎯 테스트 언어: ${TEST_LANGUAGES[*]}"
     echo "🎯 SAM 옵티마이저로 훈련된 Cross-Lingual 모델"
     echo ""
@@ -97,6 +164,12 @@ if [ $? -eq 0 ]; then
     echo "   - 훈련 언어별 성능 vs 테스트 언어 성능 비교"
     echo "   - wandb에서 Cross-lingual 메트릭 시각화"
     echo "   - 언어별 상세 분석 결과 자동 출력"
+    echo ""
+    echo "🚀 다른 조합도 실행해보세요:"
+    echo "   bash train_sam_cross_lingual.sh 1  # 영어+스페인어+만다린 → 그리스어"
+    echo "   bash train_sam_cross_lingual.sh 2  # 영어+그리스어+만다린 → 스페인어"
+    echo "   bash train_sam_cross_lingual.sh 3  # 영어+그리스어+스페인어 → 만다린"
+    echo "   bash train_sam_cross_lingual.sh 4  # 그리스어+스페인어+만다린 → 영어"
 else
     echo ""
     echo "❌ SAM Cross-Lingual 모델 훈련 중 오류가 발생했습니다."
