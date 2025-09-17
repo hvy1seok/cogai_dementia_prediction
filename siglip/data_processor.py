@@ -405,6 +405,121 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
     
     return train_indices, val_indices, test_indices
 
+def create_sample_based_split(dataset, train_split: float = 0.7, val_split: float = 0.1, test_split: float = 0.2, random_seed: int = 42):
+    """
+    샘플(파일) 단위로 stratified split 수행 (train:val:test = 7:1:2)
+    환자 단위가 아닌 파일 단위로 분할하여 더 많은 학습 데이터 확보
+    ⚠️ Speaker-dependent 결과가 나올 수 있음 (동일 환자의 샘플이 train/val/test에 분산)
+    """
+    # 데이터에서 언어, 라벨 정보 추출
+    languages = []
+    labels = []
+    
+    for i in range(len(dataset)):
+        item = dataset.data[i]
+        languages.append(item['language'])
+        labels.append(item['label'])
+    
+    print(f"\n📄 샘플 단위 분할:")
+    print(f"  전체 샘플 수: {len(dataset)}")
+    
+    # 샘플 단위로 stratify 키 생성 (언어-라벨 조합)
+    stratify_keys = [f"{lang}_{label}" for lang, label in zip(languages, labels)]
+    sample_indices = list(range(len(dataset)))
+    
+    # 샘플 단위로 분할 수행
+    from sklearn.model_selection import train_test_split
+    
+    if test_split == 0.0:
+        # Cross-lingual 모드: train/val만 분할 (test는 다른 언어)
+        if train_split == 0.0:
+            # train_split=0인 경우: 모든 데이터를 val로 사용 (Zero-shot에서 타겟 언어용)
+            val_indices = sample_indices  # 모든 샘플을 val로 사용
+            train_indices = []  # 빈 리스트
+        else:
+            # 일반적인 train/val 분할
+            train_indices, val_indices = train_test_split(
+                sample_indices,
+                test_size=val_split / (train_split + val_split),  # val 비율 조정
+                stratify=stratify_keys,
+                random_state=random_seed
+            )
+        test_indices = []  # 빈 리스트
+    else:
+        # 일반 모드: train/val/test 3-way 분할
+        # 첫 번째 분할: train vs (val + test)
+        train_indices, temp_indices = train_test_split(
+            sample_indices,
+            test_size=val_split + test_split,
+            stratify=stratify_keys,
+            random_state=random_seed
+        )
+        
+        # temp 샘플들의 stratify 키 생성
+        temp_stratify_keys = [stratify_keys[i] for i in temp_indices]
+        
+        # 두 번째 분할: val vs test
+        val_indices, test_indices = train_test_split(
+            temp_indices,
+            test_size=test_split / (val_split + test_split),  # test 비율 조정
+            stratify=temp_stratify_keys,
+            random_state=random_seed
+        )
+    
+    # 통계 계산
+    from collections import Counter
+    
+    train_lang_dist = Counter([languages[i] for i in train_indices])
+    val_lang_dist = Counter([languages[i] for i in val_indices])
+    test_lang_dist = Counter([languages[i] for i in test_indices])
+    
+    train_label_dist = Counter([labels[i] for i in train_indices])
+    val_label_dist = Counter([labels[i] for i in val_indices])
+    test_label_dist = Counter([labels[i] for i in test_indices])
+    
+    print(f"\n📊 샘플 단위 분할 결과:")
+    print(f"  훈련: {len(train_indices)}개 샘플")
+    print(f"  검증: {len(val_indices)}개 샘플")
+    print(f"  테스트: {len(test_indices)}개 샘플")
+    
+    print(f"\n📊 언어별 분포 (샘플 단위):")
+    for lang in set(languages):
+        train_count = train_lang_dist[lang]
+        val_count = val_lang_dist[lang]
+        test_count = test_lang_dist[lang]
+        total_count = train_count + val_count + test_count
+        if total_count > 0:
+            if test_split > 0.0:
+                print(f"  {lang}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
+                      f"검증 {val_count}개 ({val_count/total_count*100:.1f}%), "
+                      f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
+            else:
+                print(f"  {lang}: 훈련 {train_count}개 ({train_count/(train_count+val_count)*100:.1f}%), "
+                      f"검증 {val_count}개 ({val_count/(train_count+val_count)*100:.1f}%)")
+    
+    print(f"\n📊 라벨별 분포 (샘플 단위):")
+    label_names = {0: '정상', 1: '치매'}
+    for label in [0, 1]:
+        train_count = train_label_dist[label]
+        val_count = val_label_dist[label]
+        test_count = test_label_dist[label]
+        total_count = train_count + val_count + test_count
+        if total_count > 0:
+            if test_split > 0.0:
+                print(f"  {label_names[label]}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
+                      f"검증 {val_count}개 ({val_count/total_count*100:.1f}%), "
+                      f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
+            else:
+                print(f"  {label_names[label]}: 훈련 {train_count}개 ({train_count/(train_count+val_count)*100:.1f}%), "
+                      f"검증 {val_count}개 ({val_count/(train_count+val_count)*100:.1f}%)")
+    
+    print(f"\n⚠️ 샘플 단위 분할 주의사항:")
+    print(f"  - 동일 환자의 샘플이 train/val/test에 분산될 수 있음")
+    print(f"  - Speaker-dependent 결과로 실제 임상 적용성은 제한적")
+    print(f"  - 더 많은 학습 데이터로 높은 성능 달성 가능")
+    
+    return train_indices, val_indices, test_indices
+
 def compute_class_weights(dataset, config):
     """클래스 불균형을 고려한 가중치 자동 계산"""
     if not config.auto_class_weights:
@@ -520,14 +635,25 @@ def create_dataloaders(data_dir: str,
             languages=config.languages
         )
         
-        # Stratified 데이터 분할 (언어별 + 라벨별 비율 유지)
-        train_indices, val_indices, test_indices = create_stratified_split(
-            full_dataset, 
-            train_split=config.train_split,
-            val_split=config.val_split,
-            test_split=config.test_split,
-            random_seed=config.random_seed
-        )
+        # 분할 방식에 따른 데이터 분할
+        if config.split_by_patient:
+            print("👥 환자 단위 Stratified Split 수행 중...")
+            train_indices, val_indices, test_indices = create_stratified_split(
+                full_dataset, 
+                train_split=config.train_split,
+                val_split=config.val_split,
+                test_split=config.test_split,
+                random_seed=config.random_seed
+            )
+        else:
+            print("📄 샘플 단위 Stratified Split 수행 중...")
+            train_indices, val_indices, test_indices = create_sample_based_split(
+                full_dataset, 
+                train_split=config.train_split,
+                val_split=config.val_split,
+                test_split=config.test_split,
+                random_seed=config.random_seed
+            )
         
         # Subset으로 데이터셋 분할
         train_dataset = Subset(full_dataset, train_indices)

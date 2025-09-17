@@ -243,6 +243,11 @@ def main():
     parser.add_argument("--test_languages", nargs="+", default=["Greek"],
                        help="Cross-lingual 모드에서 테스트에 사용할 언어들")
     
+    # 데이터 분할 방식 옵션
+    parser.add_argument("--split_by_patient", type=str, default="true", 
+                       choices=["true", "false"],
+                       help="데이터 분할 방식 (true: 환자 단위, false: 샘플 단위)")
+    
     args = parser.parse_args()
     
     # 설정 생성
@@ -287,6 +292,7 @@ def main():
     # 베스트 모델 선택 기준 설정
     config.best_model_metric = args.best_model_metric
     config.target_languages = args.target_languages
+    config.split_by_patient = args.split_by_patient.lower() == "true"
     
     # Cross-lingual 설정
     if args.parser == "cross_lingual":

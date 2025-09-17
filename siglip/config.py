@@ -28,6 +28,7 @@ class SigLIPConfig:
     warmup_steps: int = 100
     weight_decay: float = 0.01
     early_stopping_patience: int = 15  # Validation AUC 기준 Early Stopping
+    split_by_patient: bool = True  # True: 환자 단위 분할, False: 샘플 단위 분할
     
     # 손실 함수 설정
     loss_type: str = "cross_entropy"  # "cross_entropy", "focal", "bce"

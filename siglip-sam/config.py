@@ -48,6 +48,7 @@ class SigLIPSAMConfig:
     val_split: float = 0.1
     test_split: float = 0.2
     random_seed: int = 42
+    split_by_patient: bool = True  # True: 환자 단위 분할, False: 샘플 단위 분할
     
     # 경로 설정
     data_dir: str = "../../training_dset"
