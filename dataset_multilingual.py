@@ -119,15 +119,15 @@ def load_language_data(lang_dir, language):
     return data
 
 def load_english_data(lang_dir, language):
-    """영어 데이터 로드"""
+    """영어 데이터 로드 (다른 언어와 동일한 구조)"""
     data = []
     
-    # textdata와 voicedata 디렉토리에서 직접 로드 (다른 언어와 동일한 구조)
+    # textdata와 voicedata 디렉토리에서 직접 로드
     text_dir = lang_dir / 'textdata'
     voice_dir = lang_dir / 'voicedata'
     
     if text_dir.exists() and voice_dir.exists():
-        # AD, HC 카테고리
+        # AD, HC 카테고리만 사용
         categories = [
             ('HC', 0),    # Healthy Control
             ('AD', 1)     # Alzheimer's Disease
@@ -159,78 +159,8 @@ def load_english_data(lang_dir, language):
                         except Exception as e:
                             print(f"⚠️ 영어 파일 로드 실패: {text_file} - {e}")
     
-    # Pitt 디렉토리도 있다면 추가로 로드
-    pitt_dir = lang_dir / 'Pitt'
-    if pitt_dir.exists():
-        pitt_data = load_pitt_data(pitt_dir, language)
-        data.extend(pitt_data)
-    
     return data
 
-def load_pitt_data(pitt_dir, language):
-    """Pitt 코퍼스 데이터 로드"""
-    data = []
-    
-    text_dir = pitt_dir / 'textdata'
-    voice_dir = pitt_dir / 'voicedata'
-    
-    if not (text_dir.exists() and voice_dir.exists()):
-        return data
-    
-    # AD, HC 카테고리로 로드 (실제 디렉토리 구조에 맞게)
-    categories = [
-        ('HC', 0),    # Healthy Control
-        ('AD', 1)     # Alzheimer's Disease  
-    ]
-    
-    for cat_name, label in categories:
-        cat_text_dir = text_dir / cat_name
-        cat_voice_dir = voice_dir / cat_name
-        
-        if not (cat_text_dir.exists() and cat_voice_dir.exists()):
-            continue
-        
-        # 하위 태스크 디렉토리들 (cookie, fluency, recall, sentence)
-        for task_dir in cat_text_dir.iterdir():
-            if task_dir.is_dir():
-                voice_task_dir = cat_voice_dir / task_dir.name
-                
-                if not voice_task_dir.exists():
-                    continue
-                
-                # 텍스트 파일들 로드
-                for text_file in task_dir.glob('*.txt'):
-                    # 해당하는 오디오 파일 찾기
-                    audio_file = voice_task_dir / f"{text_file.stem}.npy"
-                    
-                    if not audio_file.exists():
-                        # 다른 확장자로도 시도
-                        audio_file = voice_task_dir / f"{text_file.stem}.wav"
-                        if not audio_file.exists():
-                            continue
-                    
-                    # 텍스트 읽기
-                    try:
-                        with open(text_file, 'r', encoding='utf-8') as f:
-                            text = f.read().strip()
-                        
-                        if not text or len(text) < 10:  # 너무 짧은 텍스트 스킵
-                            continue
-                        
-                        # 환자 ID 추출 (카테고리_태스크_파일명)
-                        patient_id = f"{language}_{cat_name}_{task_dir.name}_{text_file.stem}"
-                        
-                        data.append({
-                            'text': text,
-                            'audio_path': str(audio_file),
-                            'label': label,
-                            'language': language,
-                            'patient_id': patient_id
-                        })
-                    except Exception as e:
-                        print(f"⚠️ 파일 로드 실패: {text_file} - {e}")
-    
-    return data
 
 def load_greek_data(lang_dir, language):
     """그리스어 데이터 로드"""
@@ -241,11 +171,10 @@ def load_greek_data(lang_dir, language):
     voice_dir = lang_dir / 'voicedata'
     
     if text_dir.exists() and voice_dir.exists():
-        # AD, HC, MCI 카테고리
+        # AD, HC 카테고리만 사용
         categories = [
             ('HC', 0),    # Healthy Control
-            ('AD', 1),    # Alzheimer's Disease
-            ('MCI', 1)    # Mild Cognitive Impairment (치매로 분류)
+            ('AD', 1)     # Alzheimer's Disease
         ]
         
         for cat_name, label in categories:
@@ -288,11 +217,10 @@ def load_greek_subdir(subdir, language, subdir_name):
     data = []
     
     if subdir_name in ['long', 'short']:
-        # AD, HC, MCI 카테고리
+        # AD, HC 카테고리만 사용
         categories = [
             ('HC', 0),
-            ('AD', 1),
-            ('MCI', 1)
+            ('AD', 1)
         ]
         
         for cat_name, label in categories:
@@ -325,11 +253,10 @@ def load_spanish_data(lang_dir, language):
     voice_dir = lang_dir / 'voicedata'
     
     if text_dir.exists() and voice_dir.exists():
-        # AD, HC, MCI 카테고리
+        # AD, HC 카테고리만 사용
         categories = [
             ('HC', 0),    # Healthy Control
-            ('AD', 1),    # Alzheimer's Disease
-            ('MCI', 1)    # Mild Cognitive Impairment (치매로 분류)
+            ('AD', 1)     # Alzheimer's Disease
         ]
         
         for cat_name, label in categories:
@@ -369,11 +296,10 @@ def load_mandarin_data(lang_dir, language):
     voice_dir = lang_dir / 'voicedata'
     
     if text_dir.exists() and voice_dir.exists():
-        # AD, HC, MCI 카테고리
+        # AD, HC 카테고리만 사용
         categories = [
             ('HC', 0),    # Healthy Control
-            ('AD', 1),    # Alzheimer's Disease
-            ('MCI', 1)    # Mild Cognitive Impairment (치매로 분류)
+            ('AD', 1)     # Alzheimer's Disease
         ]
         
         for cat_name, label in categories:
