@@ -202,6 +202,7 @@ class DementiaDataset(Dataset):
         # 라벨 추가
         inputs['labels'] = torch.tensor(item['label'], dtype=torch.long)
         inputs['language'] = item['language']
+        inputs['patient_id'] = item.get('patient_id', item['file_id'])  # patient_id 추가
         
         return inputs
 

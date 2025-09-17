@@ -367,11 +367,14 @@ def plot_confusion_matrix(predictions, labels, title="Confusion Matrix", save_pa
         plt.close()
 
 def train_epoch(model, train_loader, optimizer, config, scaler=None, use_mixed_precision=False):
-    """한 에포크 훈련"""
+    """한 에포크 훈련 - SigLIP2 Contrastive Learning 포함"""
     model.train()
     total_loss = 0.0
+    total_classification_loss = 0.0
+    total_contrastive_loss = 0.0
     all_predictions = []
     all_labels = []
+    contrastive_metrics_sum = {}
     
     for batch_idx, batch in enumerate(train_loader):
         # GPU로 이동
@@ -379,19 +382,32 @@ def train_epoch(model, train_loader, optimizer, config, scaler=None, use_mixed_p
             if isinstance(batch[key], torch.Tensor):
                 batch[key] = batch[key].to(config.device)
         
+        # 환자 ID 추출 (contrastive learning용)
+        if 'patient_id' in batch:
+            patient_ids = batch['patient_id'] if isinstance(batch['patient_id'], list) else [batch['patient_id']]
+        else:
+            # Fallback: 임시 patient_id 생성
+            if 'language' in batch:
+                languages = batch['language'] if isinstance(batch['language'], list) else ['Unknown'] * len(batch['labels'])
+                patient_ids = [f"{lang}_{i // 2}" for i, lang in enumerate(languages)]
+            else:
+                patient_ids = [f"patient_{i // 2}" for i in range(len(batch['labels']))]
+        
         # SAM 옵티마이저 사용 시 (mixed precision 비활성화로 안정성 확보)
         if config.optimizer_type == "sam":
             # SAM은 mixed precision 없이 사용 (안정성을 위해)
             # 첫 번째 forward pass
-            logits = model(batch)
-            loss = model.compute_loss(logits, batch['labels'])
+            model_outputs = model(batch, return_embeddings=model.use_contrastive)
+            loss_dict = model.compute_loss(model_outputs, batch['labels'], patient_ids)
+            loss = loss_dict['total_loss']
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
             optimizer.first_step(zero_grad=True)
             
             # 두 번째 forward pass
-            logits = model(batch)
-            loss = model.compute_loss(logits, batch['labels'])
+            model_outputs = model(batch, return_embeddings=model.use_contrastive)
+            loss_dict = model.compute_loss(model_outputs, batch['labels'], patient_ids)
+            loss = loss_dict['total_loss']
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
             optimizer.second_step(zero_grad=True)
@@ -402,8 +418,9 @@ def train_epoch(model, train_loader, optimizer, config, scaler=None, use_mixed_p
             
             if scaler and use_mixed_precision:
                 with autocast('cuda'):
-                    logits = model(batch)
-                    loss = model.compute_loss(logits, batch['labels'])
+                    model_outputs = model(batch, return_embeddings=model.use_contrastive)
+                    loss_dict = model.compute_loss(model_outputs, batch['labels'], patient_ids)
+                    loss = loss_dict['total_loss']
                 
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
@@ -411,39 +428,92 @@ def train_epoch(model, train_loader, optimizer, config, scaler=None, use_mixed_p
                 scaler.step(optimizer)
                 scaler.update()
             else:
-                logits = model(batch)
-                loss = model.compute_loss(logits, batch['labels'])
+                model_outputs = model(batch, return_embeddings=model.use_contrastive)
+                loss_dict = model.compute_loss(model_outputs, batch['labels'], patient_ids)
+                loss = loss_dict['total_loss']
                 
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
                 optimizer.step()
         
+        # 로짓 추출 (메트릭 계산용)
+        if isinstance(model_outputs, dict):
+            logits = model_outputs['logits']
+        else:
+            logits = model_outputs
+        
         # 메트릭 수집
         total_loss += loss.item()
+        total_classification_loss += loss_dict['classification_loss'].item()
+        
+        # Contrastive 메트릭 수집
+        if loss_dict['contrastive_metrics']:
+            if 'contrastive_loss' in loss_dict['contrastive_metrics']:
+                total_contrastive_loss += loss_dict['contrastive_metrics']['contrastive_loss']
+            
+            # 평균을 위한 메트릭 누적
+            for key, value in loss_dict['contrastive_metrics'].items():
+                if key not in contrastive_metrics_sum:
+                    contrastive_metrics_sum[key] = 0.0
+                contrastive_metrics_sum[key] += value
+        
         all_predictions.extend(logits.detach().cpu().numpy())
         all_labels.extend(batch['labels'].cpu().numpy())
         
         # 로깅
         if batch_idx % config.log_interval == 0:
-            print(f'Train Batch {batch_idx}/{len(train_loader)}: Loss = {loss.item():.4f}')
-            wandb.log({
-                'train_batch_loss': loss.item(),
+            log_msg = f'Train Batch {batch_idx}/{len(train_loader)}: Total Loss = {loss.item():.4f}'
+            if loss_dict['contrastive_metrics']:
+                log_msg += f', Cls Loss = {loss_dict["classification_loss"].item():.4f}'
+                if 'contrastive_loss' in loss_dict['contrastive_metrics']:
+                    log_msg += f', Cont Loss = {loss_dict["contrastive_metrics"]["contrastive_loss"]:.4f}'
+                if 'alignment_score' in loss_dict['contrastive_metrics']:
+                    log_msg += f', Align = {loss_dict["contrastive_metrics"]["alignment_score"]:.3f}'
+            print(log_msg)
+            
+            # wandb 로깅
+            wandb_log = {
+                'train_batch_total_loss': loss.item(),
+                'train_batch_classification_loss': loss_dict['classification_loss'].item(),
                 'train_step': batch_idx
-            })
+            }
+            
+            # Contrastive 메트릭 추가
+            for key, value in loss_dict['contrastive_metrics'].items():
+                wandb_log[f'train_batch_{key}'] = value
+                
+            wandb.log(wandb_log)
     
     # 에포크 메트릭 계산
-    avg_loss = total_loss / len(train_loader)
+    num_batches = len(train_loader)
+    avg_total_loss = total_loss / num_batches
+    avg_classification_loss = total_classification_loss / num_batches
+    avg_contrastive_loss = total_contrastive_loss / num_batches if total_contrastive_loss > 0 else 0.0
+    
+    # Contrastive 메트릭 평균 계산
+    avg_contrastive_metrics = {}
+    for key, value in contrastive_metrics_sum.items():
+        avg_contrastive_metrics[key] = value / num_batches
+    
     metrics = compute_metrics(np.array(all_predictions), np.array(all_labels))
     
-    return avg_loss, metrics
+    # 추가 메트릭 정보
+    metrics['classification_loss'] = avg_classification_loss
+    metrics['contrastive_loss'] = avg_contrastive_loss
+    metrics.update(avg_contrastive_metrics)
+    
+    return avg_total_loss, metrics
 
 def evaluate(model, test_loader, config, use_mixed_precision=False, title_prefix="Test"):
-    """모델 평가 - 언어별 분석 포함"""
+    """모델 평가 - 언어별 분석 및 Contrastive Learning 포함"""
     model.eval()
     total_loss = 0.0
+    total_classification_loss = 0.0
+    total_contrastive_loss = 0.0
     all_predictions = []
     all_labels = []
     all_languages = []
+    contrastive_metrics_sum = {}
     
     with torch.no_grad():
         for batch in test_loader:
@@ -452,16 +522,48 @@ def evaluate(model, test_loader, config, use_mixed_precision=False, title_prefix
                 if isinstance(batch[key], torch.Tensor):
                     batch[key] = batch[key].to(config.device)
             
+            # 환자 ID 추출 (contrastive learning용)
+            if 'patient_id' in batch:
+                patient_ids = batch['patient_id'] if isinstance(batch['patient_id'], list) else [batch['patient_id']]
+            else:
+                # Fallback: 임시 patient_id 생성
+                if 'language' in batch:
+                    languages = batch['language'] if isinstance(batch['language'], list) else ['Unknown'] * len(batch['labels'])
+                    patient_ids = [f"{lang}_{i // 2}" for i, lang in enumerate(languages)]
+                else:
+                    patient_ids = [f"patient_{i // 2}" for i in range(len(batch['labels']))]
+            
             if use_mixed_precision:
                 with autocast('cuda'):
-                    logits = model(batch)
-                    loss = model.compute_loss(logits, batch['labels'])
+                    model_outputs = model(batch, return_embeddings=model.use_contrastive)
+                    loss_dict = model.compute_loss(model_outputs, batch['labels'], patient_ids)
+                    loss = loss_dict['total_loss']
             else:
-                logits = model(batch)
-                loss = model.compute_loss(logits, batch['labels'])
+                model_outputs = model(batch, return_embeddings=model.use_contrastive)
+                loss_dict = model.compute_loss(model_outputs, batch['labels'], patient_ids)
+                loss = loss_dict['total_loss']
+            
+            # 로짓 추출
+            if isinstance(model_outputs, dict):
+                logits = model_outputs['logits']
+            else:
+                logits = model_outputs
             
             # 메트릭 수집
             total_loss += loss.item()
+            total_classification_loss += loss_dict['classification_loss'].item()
+            
+            # Contrastive 메트릭 수집
+            if loss_dict['contrastive_metrics']:
+                if 'contrastive_loss' in loss_dict['contrastive_metrics']:
+                    total_contrastive_loss += loss_dict['contrastive_metrics']['contrastive_loss']
+                
+                # 평균을 위한 메트릭 누적
+                for key, value in loss_dict['contrastive_metrics'].items():
+                    if key not in contrastive_metrics_sum:
+                        contrastive_metrics_sum[key] = 0.0
+                    contrastive_metrics_sum[key] += value
+            
             all_predictions.extend(logits.cpu().numpy())
             all_labels.extend(batch['labels'].cpu().numpy())
             
@@ -476,8 +578,22 @@ def evaluate(model, test_loader, config, use_mixed_precision=False, title_prefix
                 all_languages.extend(['Unknown'] * len(batch['labels']))
     
     # 메트릭 계산 (언어별 분석 포함)
-    avg_loss = total_loss / len(test_loader)
+    num_batches = len(test_loader)
+    avg_total_loss = total_loss / num_batches
+    avg_classification_loss = total_classification_loss / num_batches
+    avg_contrastive_loss = total_contrastive_loss / num_batches if total_contrastive_loss > 0 else 0.0
+    
+    # Contrastive 메트릭 평균 계산
+    avg_contrastive_metrics = {}
+    for key, value in contrastive_metrics_sum.items():
+        avg_contrastive_metrics[key] = value / num_batches
+    
     metrics = compute_metrics(np.array(all_predictions), np.array(all_labels), all_languages)
+    
+    # 추가 메트릭 정보
+    metrics['classification_loss'] = avg_classification_loss
+    metrics['contrastive_loss'] = avg_contrastive_loss
+    metrics.update(avg_contrastive_metrics)
     
     # ROC 곡선 그리기 및 wandb 업로드
     try:
@@ -501,7 +617,7 @@ def evaluate(model, test_loader, config, use_mixed_precision=False, title_prefix
     except Exception as e:
         print(f"⚠️ Confusion Matrix 생성 실패: {e}")
     
-    return avg_loss, metrics
+    return avg_total_loss, metrics
 
 def save_checkpoint(model, optimizer, epoch, metrics, config, is_best=False):
     """체크포인트 저장"""
@@ -640,6 +756,22 @@ def train_model(config: SigLIPSAMConfig):
             'test_auc': test_metrics['auc'],
             'learning_rate': optimizer.param_groups[0]['lr']
         }
+        
+        # Contrastive Learning 메트릭 추가
+        for prefix, metrics_dict in [('train', train_metrics), ('val', val_metrics), ('test', test_metrics)]:
+            # Classification vs Contrastive loss 분리
+            if 'classification_loss' in metrics_dict:
+                wandb_log[f'{prefix}_classification_loss'] = metrics_dict['classification_loss']
+            if 'contrastive_loss' in metrics_dict:
+                wandb_log[f'{prefix}_contrastive_loss'] = metrics_dict['contrastive_loss']
+            
+            # Cross-modal alignment 메트릭
+            if 'alignment_score' in metrics_dict:
+                wandb_log[f'{prefix}_alignment_score'] = metrics_dict['alignment_score']
+            if 'avg_positive_similarity' in metrics_dict:
+                wandb_log[f'{prefix}_positive_similarity'] = metrics_dict['avg_positive_similarity']
+            if 'avg_negative_similarity' in metrics_dict:
+                wandb_log[f'{prefix}_negative_similarity'] = metrics_dict['avg_negative_similarity']
         
         # 최적 threshold 정보 추가
         if 'optimal_threshold' in val_metrics:
@@ -788,6 +920,12 @@ def main():
     parser.add_argument("--sam_rho", type=float, default=0.05, help="SAM rho 파라미터")
     parser.add_argument("--sam_adaptive", action="store_true", help="Adaptive SAM 사용")
     
+    # SigLIP2 Contrastive Learning 옵션
+    parser.add_argument("--use_contrastive", action="store_true", default=True, help="Contrastive Learning 사용")
+    parser.add_argument("--no_contrastive", action="store_true", help="Contrastive Learning 비활성화")
+    parser.add_argument("--contrastive_weight", type=float, default=0.5, help="Contrastive vs Classification 손실 가중치")
+    parser.add_argument("--contrastive_temperature", type=float, default=0.07, help="Contrastive Learning 온도 파라미터")
+    
     args = parser.parse_args()
     
     # 설정 생성
@@ -823,6 +961,14 @@ def main():
     if args.sam_rho:
         config.sam_rho = args.sam_rho
     config.sam_adaptive = args.sam_adaptive
+    
+    # SigLIP2 Contrastive Learning 설정
+    if args.no_contrastive:
+        config.use_contrastive = False
+    else:
+        config.use_contrastive = args.use_contrastive
+    config.contrastive_weight = args.contrastive_weight
+    config.contrastive_temperature = args.contrastive_temperature
     
     # 언어 파서 설정
     if args.parser == "cross_lingual":

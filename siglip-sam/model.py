@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoProcessor
 import numpy as np
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from sam_optimizer import SAM
 
 # Lion Optimizer 라이브러리 임포트
@@ -57,6 +57,100 @@ class FocalLoss(nn.Module):
         else:
             return focal_loss
 
+class SigLIP2ContrastiveLoss(nn.Module):
+    """
+    SigLIP2 스타일 Contrastive Loss 구현
+    - Sigmoid matching (CLIP의 softmax 대신)
+    - Same-patient audio-text pairs를 positive로 처리
+    - Cross-modal representation alignment
+    """
+    def __init__(self, temperature: float = 0.07, use_sigmoid: bool = True):
+        super(SigLIP2ContrastiveLoss, self).__init__()
+        self.temperature = temperature
+        self.use_sigmoid = use_sigmoid
+        self.cross_entropy = nn.CrossEntropyLoss()
+        self.bce_with_logits = nn.BCEWithLogitsLoss()
+    
+    def forward(self, audio_embeds: torch.Tensor, text_embeds: torch.Tensor, 
+                patient_ids: List[str]) -> Dict[str, torch.Tensor]:
+        """
+        Args:
+            audio_embeds: [batch_size, embed_dim] 오디오 임베딩
+            text_embeds: [batch_size, embed_dim] 텍스트 임베딩  
+            patient_ids: [batch_size] 환자 ID 리스트
+        
+        Returns:
+            Dict containing contrastive loss and alignment metrics
+        """
+        batch_size = audio_embeds.shape[0]
+        device = audio_embeds.device
+        
+        # L2 정규화
+        audio_embeds = F.normalize(audio_embeds, p=2, dim=1)
+        text_embeds = F.normalize(text_embeds, p=2, dim=1)
+        
+        # 유사도 행렬 계산: [batch_size, batch_size]
+        similarity_matrix = torch.matmul(audio_embeds, text_embeds.T) / self.temperature
+        
+        # Positive pairs 마스크 생성 (같은 환자)
+        positive_mask = torch.zeros(batch_size, batch_size, device=device)
+        for i in range(batch_size):
+            for j in range(batch_size):
+                if patient_ids[i] == patient_ids[j]:
+                    positive_mask[i, j] = 1.0
+        
+        # Negative pairs 마스크 (다른 환자)
+        negative_mask = 1.0 - positive_mask
+        
+        if self.use_sigmoid:
+            # SigLIP 스타일: Sigmoid matching
+            # Positive pairs는 1에 가깝게, negative pairs는 0에 가깝게
+            positive_loss = self.bce_with_logits(
+                similarity_matrix * positive_mask, 
+                positive_mask
+            )
+            
+            negative_loss = self.bce_with_logits(
+                similarity_matrix * negative_mask,
+                torch.zeros_like(negative_mask)
+            )
+            
+            contrastive_loss = (positive_loss + negative_loss) / 2
+            
+        else:
+            # CLIP 스타일: Softmax contrastive
+            # Audio-to-text direction
+            a2t_loss = self.cross_entropy(similarity_matrix, torch.arange(batch_size, device=device))
+            
+            # Text-to-audio direction  
+            t2a_loss = self.cross_entropy(similarity_matrix.T, torch.arange(batch_size, device=device))
+            
+            contrastive_loss = (a2t_loss + t2a_loss) / 2
+        
+        # 정렬 메트릭 계산
+        with torch.no_grad():
+            # Positive pairs 평균 유사도
+            positive_similarities = similarity_matrix * positive_mask
+            positive_count = positive_mask.sum()
+            avg_positive_sim = positive_similarities.sum() / (positive_count + 1e-8)
+            
+            # Negative pairs 평균 유사도
+            negative_similarities = similarity_matrix * negative_mask
+            negative_count = negative_mask.sum()
+            avg_negative_sim = negative_similarities.sum() / (negative_count + 1e-8)
+            
+            # 정렬 정도 (positive - negative)
+            alignment_score = avg_positive_sim - avg_negative_sim
+        
+        return {
+            'contrastive_loss': contrastive_loss,
+            'avg_positive_similarity': avg_positive_sim,
+            'avg_negative_similarity': avg_negative_sim,
+            'alignment_score': alignment_score,
+            'positive_pairs_count': positive_count,
+            'negative_pairs_count': negative_count
+        }
+
 class SigLIPSAMDementiaClassifier(nn.Module):
     """
     SigLIP2 기반 치매 진단 분류기 (SAM 옵티마이저 지원)
@@ -100,6 +194,23 @@ class SigLIPSAMDementiaClassifier(nn.Module):
         # 손실 함수는 나중에 클래스 가중치와 함께 초기화
         self.config = config
         self.criterion = None  # 나중에 설정
+        
+        # SigLIP2 Contrastive Learning 설정
+        self.use_contrastive = getattr(config, 'use_contrastive', True)
+        self.contrastive_weight = getattr(config, 'contrastive_weight', 0.5)
+        self.contrastive_temperature = getattr(config, 'contrastive_temperature', 0.07)
+        
+        if self.use_contrastive:
+            self.contrastive_loss = SigLIP2ContrastiveLoss(
+                temperature=self.contrastive_temperature,
+                use_sigmoid=True  # SigLIP2 스타일
+            )
+            print(f"🔗 SigLIP2 Contrastive Learning 활성화:")
+            print(f"   가중치: {self.contrastive_weight}")
+            print(f"   온도: {self.contrastive_temperature}")
+        else:
+            self.contrastive_loss = None
+            print("⚪ Contrastive Learning 비활성화")
     
     def setup_loss_function(self, class_weights=None):
         """손실 함수 초기화 - 클래스 가중치 적용"""
@@ -129,9 +240,9 @@ class SigLIPSAMDementiaClassifier(nn.Module):
                 self.criterion = nn.CrossEntropyLoss()
                 print("📊 Cross Entropy Loss 사용")
     
-    def forward(self, batch):
+    def forward(self, batch, return_embeddings=False):
         """
-        순전파
+        순전파 - SigLIP2 Contrastive Learning 포함
         """
         # SigLIP2 모델 통과
         outputs = self.siglip(
@@ -143,8 +254,12 @@ class SigLIPSAMDementiaClassifier(nn.Module):
             return_dict=True
         )
         
-        # 멀티모달 임베딩 생성 (고정 차원)
-        multimodal_embeddings = (outputs.image_embeds + outputs.text_embeds) / 2
+        # 개별 임베딩 추출 (contrastive learning용)
+        audio_embeds = outputs.image_embeds  # 멜스펙토그램을 이미지로 처리
+        text_embeds = outputs.text_embeds
+        
+        # 멀티모달 임베딩 생성 (분류용)
+        multimodal_embeddings = (audio_embeds + text_embeds) / 2
         
         # 언어 임베딩 추가 (선택적)
         if 'languages' in batch:
@@ -173,21 +288,71 @@ class SigLIPSAMDementiaClassifier(nn.Module):
         # 분류
         logits = self.classifier(multimodal_embeddings)
         
+        if return_embeddings:
+            return {
+                'logits': logits,
+                'audio_embeds': audio_embeds,
+                'text_embeds': text_embeds,
+                'multimodal_embeds': multimodal_embeddings
+            }
+        
         return logits
     
-    def compute_loss(self, logits, labels):
+    def compute_loss(self, model_outputs, labels, patient_ids=None):
         """
-        손실 계산
+        통합 손실 계산 - Classification + Contrastive Learning
         """
+        # 모델 출력 처리
+        if isinstance(model_outputs, dict):
+            logits = model_outputs['logits']
+            audio_embeds = model_outputs.get('audio_embeds')
+            text_embeds = model_outputs.get('text_embeds')
+        else:
+            logits = model_outputs
+            audio_embeds = None
+            text_embeds = None
+        
+        # 분류 손실 계산
         if self.config.loss_type == "bce":
             # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
             labels_bce = labels.float()
             logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
-            loss = self.criterion(logits_bce, labels_bce)
+            classification_loss = self.criterion(logits_bce, labels_bce)
         else:
-            loss = self.criterion(logits, labels)
+            classification_loss = self.criterion(logits, labels)
         
-        return loss
+        # Contrastive 손실 계산 (활성화된 경우)
+        total_loss = classification_loss
+        contrastive_metrics = {}
+        
+        if (self.use_contrastive and 
+            audio_embeds is not None and 
+            text_embeds is not None and 
+            patient_ids is not None):
+            
+            contrastive_outputs = self.contrastive_loss(
+                audio_embeds, text_embeds, patient_ids
+            )
+            
+            contrastive_loss = contrastive_outputs['contrastive_loss']
+            total_loss = (1 - self.contrastive_weight) * classification_loss + \
+                        self.contrastive_weight * contrastive_loss
+            
+            # Contrastive 메트릭 저장
+            contrastive_metrics = {
+                'contrastive_loss': contrastive_loss.item(),
+                'avg_positive_similarity': contrastive_outputs['avg_positive_similarity'].item(),
+                'avg_negative_similarity': contrastive_outputs['avg_negative_similarity'].item(),
+                'alignment_score': contrastive_outputs['alignment_score'].item(),
+                'positive_pairs_count': contrastive_outputs['positive_pairs_count'].item(),
+                'negative_pairs_count': contrastive_outputs['negative_pairs_count'].item()
+            }
+        
+        return {
+            'total_loss': total_loss,
+            'classification_loss': classification_loss,
+            'contrastive_metrics': contrastive_metrics
+        }
     
     def create_optimizer(self, config):
         """

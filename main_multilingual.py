@@ -140,13 +140,18 @@ def main():
     print(f"  최대 시퀀스 길이: {args.max_seq_len}")
     
     # 다국어 데이터셋 로드
-    dataset = prepare_multilingual_dataset(
+    dataset, tokenizer = prepare_multilingual_dataset(
         data_dir=args.data_dir,
         max_seq_len=args.max_seq_len,
         languages=args.languages
     )
     
     print(f"✅ 총 {len(dataset)}개 샘플 로드됨")
+    
+    # 토크나이저 저장
+    tokenizer_save_path = os.path.join(args.save_dir, 'tokenizer')
+    tokenizer.save_pretrained(tokenizer_save_path)
+    print(f"💾 토크나이저 저장: {tokenizer_save_path}")
     
     # =================== 데이터 분할 ===================
     if args.mode == 'all_languages':

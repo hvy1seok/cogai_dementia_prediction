@@ -738,7 +738,7 @@ def prepare_multilingual_dataset(data_dir, max_seq_len=512, languages=None,
     
     print(f"✅ {len(processed_data)}개 샘플 토큰화 완료")
     
-    return MultilingualDementiaDataset(processed_data)
+    return MultilingualDementiaDataset(processed_data), tokenizer
 
 def collate_fn_multilingual(batch):
     """

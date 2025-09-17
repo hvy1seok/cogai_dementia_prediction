@@ -68,6 +68,11 @@ class SigLIPSAMConfig:
     mixed_precision: bool = True
     gradient_clip_norm: float = 1.0
     
+    # SigLIP2 Contrastive Learning 설정
+    use_contrastive: bool = True          # Contrastive Learning 사용 여부
+    contrastive_weight: float = 0.5       # Contrastive vs Classification 손실 가중치
+    contrastive_temperature: float = 0.07 # Contrastive Learning 온도 파라미터
+    
     # 로깅 설정
     log_interval: int = 10
     save_interval: int = 5  # 에포크마다 저장
