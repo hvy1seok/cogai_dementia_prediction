@@ -94,7 +94,8 @@ class FocalLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, reduction='mean'):
         super(FocalLoss, self).__init__()
         if isinstance(alpha, (list, tuple)):
-            self.alpha = torch.tensor(alpha, dtype=torch.float32)
+            # 텐서를 모듈 버퍼로 등록하여 자동으로 디바이스 이동
+            self.register_buffer('alpha', torch.tensor(alpha, dtype=torch.float32))
         else:
             self.alpha = alpha
         self.gamma = gamma
@@ -105,9 +106,9 @@ class FocalLoss(nn.Module):
         pt = torch.exp(-ce_loss)
         
         # 클래스별 alpha 가중치 적용
-        if isinstance(self.alpha, torch.Tensor):
-            # alpha가 텐서인 경우 클래스별 가중치 적용
-            alpha_t = self.alpha.gather(0, targets.long()).to(inputs.device)
+        if hasattr(self, 'alpha') and isinstance(self.alpha, torch.Tensor):
+            # alpha가 텐서인 경우 클래스별 가중치 적용 (자동으로 올바른 디바이스에 있음)
+            alpha_t = self.alpha.gather(0, targets.long())
             focal_loss = alpha_t * (1-pt)**self.gamma * ce_loss
         else:
             # alpha가 스칼라인 경우 기존 방식
