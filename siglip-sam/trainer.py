@@ -759,6 +759,7 @@ def main():
                        help="손실 함수 타입")
     parser.add_argument("--focal_alpha", type=float, default=1.0, help="Focal Loss alpha 파라미터")
     parser.add_argument("--focal_gamma", type=float, default=2.0, help="Focal Loss gamma 파라미터")
+    parser.add_argument("--auto_class_weights", action="store_true", help="클래스 불균형 자동 보정")
     
     # 옵티마이저 선택 옵션
     parser.add_argument("--optimizer_type", type=str, default="sam",
@@ -794,6 +795,7 @@ def main():
         config.focal_alpha = args.focal_alpha
     if args.focal_gamma:
         config.focal_gamma = args.focal_gamma
+    config.auto_class_weights = args.auto_class_weights
     
     # 옵티마이저 설정
     if args.optimizer_type:
