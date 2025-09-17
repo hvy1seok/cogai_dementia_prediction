@@ -71,7 +71,7 @@ class TrainingConfig:
     save_total_limit: int = 3
     
     # 조기 종료 설정
-    early_stopping_patience: int = 5
+    early_stopping_patience: int = 15
     early_stopping_threshold: float = 0.001
     
     # 혼합 정밀도 훈련

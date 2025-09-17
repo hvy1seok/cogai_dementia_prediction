@@ -386,14 +386,16 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             language_ids=language_ids
         )
         
-        # 손실 계산
-        if self.hparams.loss_type == "bce":
-            # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
-            labels_bce = batch['labels'].float()
-            logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
-            loss = self.criterion(logits_bce, labels_bce)
-        else:
-            loss = self.criterion(logits, batch['labels'])
+        # 손실 계산 (criterion이 있는 경우만)
+        loss = None
+        if hasattr(self, 'criterion') and self.criterion is not None:
+            if self.hparams.loss_type == "bce":
+                # BCE는 이진 분류용이므로 라벨을 float으로 변환하고 로짓의 두 번째 클래스만 사용
+                labels_bce = batch['labels'].float()
+                logits_bce = logits[:, 1]  # 치매 클래스 확률만 사용
+                loss = self.criterion(logits_bce, labels_bce)
+            else:
+                loss = self.criterion(logits, batch['labels'])
         
         # 정확도 계산
         acc = self.test_accuracy(logits.softmax(dim=-1), batch['labels'])
@@ -416,8 +418,9 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             'loss': loss
         })
         
-        # 로깅
-        self.log('test_loss', loss, prog_bar=True, batch_size=batch['input_ids'].size(0))
+        # 로깅 (loss가 있는 경우만)
+        if loss is not None:
+            self.log('test_loss', loss, prog_bar=True, batch_size=batch['input_ids'].size(0))
         self.log('test_acc', acc, prog_bar=True, batch_size=batch['input_ids'].size(0))
         
         return loss
