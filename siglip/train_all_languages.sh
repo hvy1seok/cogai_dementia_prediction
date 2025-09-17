@@ -13,6 +13,10 @@ LEARNING_RATE=2e-5
 NUM_EPOCHS=100
 LANGUAGES="English Greek Spanish Mandarin"
 
+# 클래스 가중치 설정 (기본값: 비활성화)
+# Focal Loss 스크립트를 사용하면 자동으로 활성화됩니다
+AUTO_CLASS_WEIGHTS=""  # 비활성화하려면 빈 문자열, 활성화하려면 "--auto_class_weights"
+
 # 출력 디렉토리 생성
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR/checkpoints"
@@ -58,7 +62,8 @@ $PYTHON_CMD trainer.py \
     --learning_rate $LEARNING_RATE \
     --num_epochs $NUM_EPOCHS \
     --parser all \
-    --languages $LANGUAGES
+    --languages $LANGUAGES \
+    $AUTO_CLASS_WEIGHTS
 
 # 결과 확인
 if [ $? -eq 0 ]; then

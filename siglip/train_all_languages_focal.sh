@@ -15,15 +15,16 @@ LANGUAGES="English Greek Spanish Mandarin"
 
 # Focal Loss 설정
 LOSS_TYPE="focal"
-FOCAL_ALPHA=1.0
+FOCAL_ALPHA=1.0  # auto_class_weights 사용 시 자동 계산됨
 FOCAL_GAMMA=2.0
+AUTO_CLASS_WEIGHTS="--auto_class_weights"  # 클래스 불균형 자동 보정
 
 # 출력 디렉토리 생성
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR/checkpoints"
 
 echo ""
-echo "🎯 훈련 설정 (Focal Loss):"
+echo "🎯 훈련 설정 (Focal Loss + 자동 클래스 가중치):"
 echo "  언어: $LANGUAGES"
 echo "  데이터 디렉토리: $DATA_DIR"
 echo "  출력 디렉토리: $OUTPUT_DIR"
@@ -32,8 +33,9 @@ echo "  배치 크기: $BATCH_SIZE"
 echo "  학습률: $LEARNING_RATE"
 echo "  에포크 수: $NUM_EPOCHS"
 echo "  손실 함수: $LOSS_TYPE"
-echo "  Focal Alpha: $FOCAL_ALPHA"
+echo "  Focal Alpha: $FOCAL_ALPHA (자동 계산으로 대체됨)"
 echo "  Focal Gamma: $FOCAL_GAMMA"
+echo "  클래스 가중치: 자동 불균형 보정 활성화"
 echo ""
 
 # Python 명령어 확인
@@ -69,7 +71,8 @@ $PYTHON_CMD trainer.py \
     --languages $LANGUAGES \
     --loss_type "$LOSS_TYPE" \
     --focal_alpha $FOCAL_ALPHA \
-    --focal_gamma $FOCAL_GAMMA
+    --focal_gamma $FOCAL_GAMMA \
+    $AUTO_CLASS_WEIGHTS
 
 # 결과 확인
 if [ $? -eq 0 ]; then

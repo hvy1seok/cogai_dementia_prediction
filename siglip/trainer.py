@@ -155,6 +155,19 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     print("모델 생성 중...")
     model = create_model(config)
     
+    # 클래스 가중치 계산 및 손실 함수 설정
+    from data_processor import compute_class_weights
+    
+    # 훈련 데이터셋에서 클래스 가중치 계산
+    if hasattr(train_loader.dataset, 'dataset'):
+        # Subset인 경우 원본 데이터셋 접근
+        original_dataset = train_loader.dataset.dataset
+    else:
+        original_dataset = train_loader.dataset
+    
+    class_weights = compute_class_weights(original_dataset, config)
+    model.setup_loss_function(class_weights)
+    
     # wandb 설정
     print("wandb 설정 중...")
     wandb_logger = setup_wandb(config, training_config)
@@ -240,6 +253,7 @@ def main():
                        help="손실 함수 타입 (cross_entropy, focal, bce)")
     parser.add_argument("--focal_alpha", type=float, default=1.0, help="Focal Loss alpha 파라미터")
     parser.add_argument("--focal_gamma", type=float, default=2.0, help="Focal Loss gamma 파라미터")
+    parser.add_argument("--auto_class_weights", action="store_true", help="클래스 불균형 자동 보정")
     # 옵티마이저 선택 옵션
     parser.add_argument("--optimizer_type", type=str, default="adamw",
                        choices=["adamw", "lion", "sam"],
@@ -273,6 +287,7 @@ def main():
         config.focal_alpha = args.focal_alpha
     if args.focal_gamma:
         config.focal_gamma = args.focal_gamma
+    config.auto_class_weights = args.auto_class_weights
     
     # 옵티마이저 설정
     if args.optimizer_type:

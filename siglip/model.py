@@ -89,17 +89,29 @@ class SAM(torch.optim.Optimizer):
 class FocalLoss(nn.Module):
     """
     Focal Loss 구현 - 불균형 데이터셋에 효과적
+    alpha가 리스트/텐서인 경우 클래스별 가중치 적용
     """
     def __init__(self, alpha=1, gamma=2, reduction='mean'):
         super(FocalLoss, self).__init__()
-        self.alpha = alpha
+        if isinstance(alpha, (list, tuple)):
+            self.alpha = torch.tensor(alpha, dtype=torch.float32)
+        else:
+            self.alpha = alpha
         self.gamma = gamma
         self.reduction = reduction
     
     def forward(self, inputs, targets):
         ce_loss = F.cross_entropy(inputs, targets, reduction='none')
         pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
+        
+        # 클래스별 alpha 가중치 적용
+        if isinstance(self.alpha, torch.Tensor):
+            # alpha가 텐서인 경우 클래스별 가중치 적용
+            alpha_t = self.alpha.gather(0, targets.long()).to(inputs.device)
+            focal_loss = alpha_t * (1-pt)**self.gamma * ce_loss
+        else:
+            # alpha가 스칼라인 경우 기존 방식
+            focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
         
         if self.reduction == 'mean':
             return focal_loss.mean()
@@ -176,21 +188,37 @@ class SigLIPDementiaClassifier(pl.LightningModule):
             'German': 5, 'Italian': 6, 'Portuguese': 7, 'Japanese': 8, 'Chinese': 9
         }
         
-        # 손실 함수 초기화
-        if loss_type == "focal":
-            self.criterion = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
-            print(f"🎯 Focal Loss 사용: alpha={focal_alpha}, gamma={focal_gamma}")
-        elif loss_type == "bce":
-            self.criterion = nn.BCEWithLogitsLoss()
-            print("⚖️ BCE Loss 사용")
-        else:
-            self.criterion = nn.CrossEntropyLoss()
-            print("📊 Cross Entropy Loss 사용")
+        # 손실 함수는 나중에 클래스 가중치와 함께 초기화
+        self.loss_type = loss_type
+        self.focal_alpha = focal_alpha
+        self.focal_gamma = focal_gamma
+        self.criterion = None  # 나중에 설정
         
         # 메트릭 초기화
         self.train_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
         self.val_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
         self.test_accuracy = Accuracy(task='multiclass', num_classes=num_classes)
+    
+    def setup_loss_function(self, class_weights=None):
+        """손실 함수 초기화 - 클래스 가중치 적용"""
+        if self.loss_type == "focal":
+            if class_weights is not None:
+                # 클래스 가중치 자동 적용
+                alpha = class_weights
+                print(f"🎯 Focal Loss 사용: alpha={alpha} (자동 계산), gamma={self.focal_gamma}")
+                print(f"   정상 클래스 가중치: {alpha[0]:.3f}, 치매 클래스 가중치: {alpha[1]:.3f}")
+            else:
+                # 수동 설정 또는 균등 가중치
+                alpha = self.focal_alpha
+                print(f"🎯 Focal Loss 사용: alpha={alpha} (수동 설정), gamma={self.focal_gamma}")
+            
+            self.criterion = FocalLoss(alpha=alpha, gamma=self.focal_gamma)
+        elif self.loss_type == "bce":
+            self.criterion = nn.BCEWithLogitsLoss()
+            print("⚖️ BCE Loss 사용")
+        else:
+            self.criterion = nn.CrossEntropyLoss()
+            print("📊 Cross Entropy Loss 사용")
         
     def forward(self, input_ids, attention_mask=None, pixel_values=None, pixel_attention_mask=None, spatial_shapes=None, language_ids=None):
         """순전파 - SigLIP2 네이티브 다국어 지원"""
