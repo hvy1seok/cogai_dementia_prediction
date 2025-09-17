@@ -479,7 +479,7 @@ def estimate_label(file_path, default_label=None):
     # 기본값: 0 (정상)
     return 0
 
-def create_stratified_split_multilingual(dataset, train_split=0.7, val_split=0.15, test_split=0.15, random_seed=42):
+def create_stratified_split_multilingual(dataset, train_split=0.7, val_split=0.1, test_split=0.2, random_seed=42):
     """
     환자 단위 stratified split (언어와 라벨을 모두 고려)
     """
@@ -571,59 +571,90 @@ def create_stratified_split_multilingual(dataset, train_split=0.7, val_split=0.1
     
     return train_indices, val_indices, test_indices
 
-def create_cross_lingual_split(dataset, train_languages, test_languages, val_split=0.2, random_seed=42):
+def create_cross_lingual_split(dataset, train_languages, test_languages, random_seed=42):
     """
-    Cross-lingual split: 훈련 언어와 테스트 언어를 분리
+    Cross-lingual split: 훈련은 소스 언어만, 검증/테스트는 타겟 언어 포함
+    - 훈련: 소스 언어만 (7:1:2 중 7 부분)
+    - 검증: 소스 언어 일부 + 타겟 언어 일부 (1 부분)
+    - 테스트: 소스 언어 일부 + 타겟 언어 일부 (2 부분)
     """
-    print(f"\n🌍 Cross-lingual Split:")
-    print(f"  훈련 언어: {train_languages}")
-    print(f"  테스트 언어: {test_languages}")
+    print(f"\n🌍 Cross-lingual Split (7:1:2):")
+    print(f"  훈련 언어 (소스): {train_languages}")
+    print(f"  타겟 언어: {test_languages}")
     
     # 언어별로 데이터 분리
-    train_data_indices = []
-    test_data_indices = []
+    source_data_indices = []
+    target_data_indices = []
     
     for idx, item in enumerate(dataset):
         if item['language'] in train_languages:
-            train_data_indices.append(idx)
+            source_data_indices.append(idx)
         elif item['language'] in test_languages:
-            test_data_indices.append(idx)
+            target_data_indices.append(idx)
     
-    # 훈련 언어 데이터를 train/val로 분할
-    train_subset = [dataset[i] for i in train_data_indices]
-    train_indices, val_indices, _ = create_stratified_split_multilingual(
-        train_subset, 
-        train_split=1-val_split, 
-        val_split=val_split, 
-        test_split=0,
+    print(f"  소스 언어 데이터: {len(source_data_indices)}개")
+    print(f"  타겟 언어 데이터: {len(target_data_indices)}개")
+    
+    # 소스 언어 데이터를 7:1:2로 분할
+    source_subset = [dataset[i] for i in source_data_indices]
+    source_train_indices, source_val_indices, source_test_indices = create_stratified_split_multilingual(
+        source_subset, 
+        train_split=0.7,   # 70%
+        val_split=0.1,     # 10% 
+        test_split=0.2,    # 20%
         random_seed=random_seed
     )
     
     # 인덱스 매핑 (subset → original)
-    train_indices = [train_data_indices[i] for i in train_indices]
-    val_indices = [train_data_indices[i] for i in val_indices]
+    train_indices = [source_data_indices[i] for i in source_train_indices]
+    source_val_mapped = [source_data_indices[i] for i in source_val_indices]
+    source_test_mapped = [source_data_indices[i] for i in source_test_indices]
     
-    # 테스트 언어 데이터를 val/test로 분할
-    test_subset = [dataset[i] for i in test_data_indices]
-    if len(test_subset) > 0:
-        _, test_val_indices, test_test_indices = create_stratified_split_multilingual(
-            test_subset,
+    # 타겟 언어 데이터를 1:2로 분할 (val:test)
+    val_indices = source_val_mapped.copy()  # 소스 언어 val로 시작
+    test_indices = source_test_mapped.copy()  # 소스 언어 test로 시작
+    
+    if len(target_data_indices) > 0:
+        target_subset = [dataset[i] for i in target_data_indices]
+        
+        # 타겟 언어를 1:2 비율로 val:test 분할
+        target_val_ratio = 1 / (1 + 2)  # 1/3
+        target_test_ratio = 2 / (1 + 2)  # 2/3
+        
+        _, target_val_indices, target_test_indices = create_stratified_split_multilingual(
+            target_subset,
             train_split=0,
-            val_split=0.5,
-            test_split=0.5,
+            val_split=target_val_ratio,
+            test_split=target_test_ratio,
             random_seed=random_seed
         )
         
-        # 테스트 언어의 val을 전체 val에 추가
-        val_indices.extend([test_data_indices[i] for i in test_val_indices])
-        test_indices = [test_data_indices[i] for i in test_test_indices]
-    else:
-        test_indices = []
+        # 타겟 언어의 val/test를 전체에 추가
+        val_indices.extend([target_data_indices[i] for i in target_val_indices])
+        test_indices.extend([target_data_indices[i] for i in target_test_indices])
     
-    print(f"\n✅ Cross-lingual Split 완료:")
-    print(f"  훈련: {len(train_indices)}개 (언어: {train_languages})")
-    print(f"  검증: {len(val_indices)}개 (혼합)")
-    print(f"  테스트: {len(test_indices)}개 (언어: {test_languages})")
+    # 언어별 분포 확인
+    train_langs = [dataset[i]['language'] for i in train_indices]
+    val_langs = [dataset[i]['language'] for i in val_indices]
+    test_langs = [dataset[i]['language'] for i in test_indices]
+    
+    from collections import Counter
+    train_lang_dist = Counter(train_langs)
+    val_lang_dist = Counter(val_langs)
+    test_lang_dist = Counter(test_langs)
+    
+    print(f"\n✅ Cross-lingual Split 완료 (7:1:2):")
+    print(f"  훈련: {len(train_indices)}개")
+    for lang, count in train_lang_dist.items():
+        print(f"    {lang}: {count}개")
+    
+    print(f"  검증: {len(val_indices)}개")
+    for lang, count in val_lang_dist.items():
+        print(f"    {lang}: {count}개")
+    
+    print(f"  테스트: {len(test_indices)}개")
+    for lang, count in test_lang_dist.items():
+        print(f"    {lang}: {count}개")
     
     return train_indices, val_indices, test_indices
 

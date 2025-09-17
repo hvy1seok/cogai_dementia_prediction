@@ -8,7 +8,7 @@ echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 DATA_DIR="../training_dset"
 MAX_SEQ_LEN=512
 BATCH_SIZE=16
-NUM_EPOCHS=50
+NUM_EPOCHS=100
 LEARNING_RATE=2e-5
 TEXT_MODEL_TYPE=1  # 1: BERT only, 2: BERT + LSTM
 DROPOUT=0.3
@@ -18,11 +18,13 @@ SEED=42
 LANGUAGES="English Greek Spanish Mandarin"
 
 echo ""
-echo "🌍 전체 언어 환자 단위 Stratified Split 실험 설정:"
+echo "🌍 전체 언어 환자 단위 Stratified Split 실험 설정 (7:1:2):"
 echo "  언어: $LANGUAGES"
 echo "  데이터 디렉토리: $DATA_DIR"
+echo "  데이터 분할: Train 70%, Val 10%, Test 20%"
 echo "  배치 크기: $BATCH_SIZE"
 echo "  에포크: $NUM_EPOCHS"
+echo "  Early Stopping: Validation AUC 기준 15 patience"
 echo "  학습률: $LEARNING_RATE"
 echo "  텍스트 모델: Type $TEXT_MODEL_TYPE"
 echo "  드롭아웃: $DROPOUT"

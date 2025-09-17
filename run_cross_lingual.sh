@@ -8,7 +8,7 @@ echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 DATA_DIR="../training_dset"
 MAX_SEQ_LEN=512
 BATCH_SIZE=16
-NUM_EPOCHS=50
+NUM_EPOCHS=100
 LEARNING_RATE=2e-5
 TEXT_MODEL_TYPE=1
 DROPOUT=0.3
@@ -46,9 +46,12 @@ TOTAL_EXPERIMENTS=${#EXPERIMENTS[@]}
 SUCCESSFUL_EXPERIMENTS=0
 FAILED_EXPERIMENTS=0
 
-echo "🌍 Cross-lingual 실험 계획:"
+echo "🌍 Cross-lingual 실험 계획 (7:1:2 분할):"
 echo "  총 실험 수: $TOTAL_EXPERIMENTS"
 echo "  각 실험: 3개 언어로 훈련 → 1개 언어로 테스트"
+echo "  데이터 분할: Train 70% (소스 언어만), Val 10% (소스+타겟), Test 20% (소스+타겟)"
+echo "  Early Stopping: Validation AUC 기준 15 epochs patience"
+echo "  최대 에포크: $NUM_EPOCHS"
 echo ""
 
 for experiment in "${EXPERIMENTS[@]}"; do

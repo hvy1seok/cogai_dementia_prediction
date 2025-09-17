@@ -69,8 +69,34 @@ class MultilingualMultimodalModel(nn.Module):
         return outputs
 
 def compute_language_specific_metrics(predictions, labels, languages, optimal_threshold=0.5):
-    """언어별 상세 메트릭 계산"""
+    """언어별 상세 메트릭 계산 + 전체 성능 메트릭"""
     language_metrics = {}
+    
+    # 전체 데이터 메트릭 먼저 계산
+    all_preds = np.array(predictions)
+    all_labels = np.array(labels)
+    all_binary_preds = (all_preds > optimal_threshold).astype(int)
+    
+    # 전체 메트릭 계산
+    overall_accuracy = (all_binary_preds == all_labels).mean()
+    overall_auc = 0.0
+    if len(np.unique(all_labels)) > 1:
+        try:
+            overall_auc = roc_auc_score(all_labels, all_preds)
+        except:
+            overall_auc = 0.0
+    
+    overall_precision, overall_recall, overall_f1, _ = precision_recall_fscore_support(
+        all_labels, all_binary_preds, average='binary', zero_division=0
+    )
+    
+    # 전체 메트릭 저장
+    language_metrics['overall_accuracy'] = overall_accuracy
+    language_metrics['overall_auc'] = overall_auc
+    language_metrics['overall_precision'] = overall_precision
+    language_metrics['overall_recall'] = overall_recall
+    language_metrics['overall_f1'] = overall_f1
+    language_metrics['overall_samples'] = len(all_preds)
     
     # 언어별 데이터 그룹화
     lang_data = defaultdict(lambda: {'preds': [], 'labels': []})
@@ -79,11 +105,24 @@ def compute_language_specific_metrics(predictions, labels, languages, optimal_th
         lang_data[lang]['preds'].append(pred)
         lang_data[lang]['labels'].append(label)
     
-    print(f"\n📊 언어별 성능 분석 (임계값: {optimal_threshold:.3f}):")
+    print(f"\n📊 성능 분석 (임계값: {optimal_threshold:.3f}):")
     print("="*60)
     
-    overall_metrics = {}
+    # 전체 성능 출력
+    overall_label_dist = Counter(all_labels)
+    overall_normal_count = overall_label_dist[0]
+    overall_dementia_count = overall_label_dist[1]
     
+    print(f"🌍 전체 (Overall):")
+    print(f"  📊 샘플: {len(all_preds)}개 (정상: {overall_normal_count}, 치매: {overall_dementia_count})")
+    print(f"  🎯 정확도: {overall_accuracy:.3f}")
+    print(f"  📈 AUC: {overall_auc:.3f}")
+    print(f"  🔍 정밀도: {overall_precision:.3f}")
+    print(f"  🔍 재현율: {overall_recall:.3f}")
+    print(f"  🔍 F1: {overall_f1:.3f}")
+    print()
+    
+    # 언어별 성능 출력
     for language in sorted(lang_data.keys()):
         lang_preds = np.array(lang_data[language]['preds'])
         lang_labels = np.array(lang_data[language]['labels'])
@@ -152,11 +191,13 @@ def compute_optimal_threshold(predictions, labels):
         return 0.5
 
 def train_multilingual_model(model, train_loader, val_loader, test_loader, optimizer, scheduler, 
-                           loss_fn, num_epochs=20, device='cuda', experiment_name="multilingual"):
+                           loss_fn, num_epochs=100, device='cuda', experiment_name="multilingual"):
     """다국어 모델 훈련 (언어별 분석 포함)"""
     
     best_val_accuracy = 0.0
     best_val_auc = 0.0
+    early_stopping_patience = 15
+    epochs_without_improvement = 0
     
     # wandb 초기화
     wandb.init(
@@ -331,16 +372,28 @@ def train_multilingual_model(model, train_loader, val_loader, test_loader, optim
             'epoch_time': time.time() - start_time
         }
         
-        # 언어별 메트릭 추가
+        # 언어별 메트릭 추가 (전체 성능 포함)
         for key, value in test_lang_metrics.items():
             log_dict[f'test_{key}'] = value
         
+        # 전체 성능을 별도로도 로깅 (더 명확하게)
+        if 'overall_accuracy' in test_lang_metrics:
+            log_dict['test_overall_performance'] = {
+                'accuracy': test_lang_metrics['overall_accuracy'],
+                'auc': test_lang_metrics['overall_auc'],
+                'precision': test_lang_metrics['overall_precision'],
+                'recall': test_lang_metrics['overall_recall'],
+                'f1': test_lang_metrics['overall_f1'],
+                'samples': test_lang_metrics['overall_samples']
+            }
+        
         wandb.log(log_dict)
         
-        # =================== 베스트 모델 저장 ===================
+        # =================== 베스트 모델 저장 및 Early Stopping ===================
         if val_auc > best_val_auc:
             best_val_auc = val_auc
             best_val_accuracy = val_accuracy
+            epochs_without_improvement = 0
             
             # 모델 저장
             torch.save({
@@ -354,6 +407,15 @@ def train_multilingual_model(model, train_loader, val_loader, test_loader, optim
             
             print(f"🏆 새로운 베스트 모델! Val AUC: {val_auc:.4f}")
             wandb.log({'best_val_auc': best_val_auc, 'best_val_accuracy': best_val_accuracy})
+        else:
+            epochs_without_improvement += 1
+            print(f"⏳ 개선 없음: {epochs_without_improvement}/{early_stopping_patience} epochs")
+        
+        # Early Stopping 체크
+        if epochs_without_improvement >= early_stopping_patience:
+            print(f"\n🛑 Early Stopping! {early_stopping_patience} epochs 동안 validation AUC 개선 없음")
+            print(f"🏆 최종 베스트 Validation AUC: {best_val_auc:.4f}")
+            break
     
     print(f"\n🎉 훈련 완료!")
     print(f"🏆 최고 검증 AUC: {best_val_auc:.4f}")

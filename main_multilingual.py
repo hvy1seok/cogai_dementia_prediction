@@ -88,7 +88,7 @@ def main():
                        help='드롭아웃 비율')
     
     # 훈련 관련 설정
-    parser.add_argument('--num_epochs', type=int, default=50, 
+    parser.add_argument('--num_epochs', type=int, default=100, 
                        help='훈련 에포크 수')
     parser.add_argument('--learning_rate', type=float, default=2e-5, 
                        help='학습률')
@@ -152,12 +152,12 @@ def main():
     if args.mode == 'all_languages':
         print(f"\n🌍 전체 언어 환자 단위 Stratified Split 모드")
         
-        # 환자 단위 stratified split
+        # 환자 단위 stratified split (7:1:2)
         train_indices, val_indices, test_indices = create_stratified_split_multilingual(
             dataset.data,
             train_split=0.7,
-            val_split=0.15,
-            test_split=0.15,
+            val_split=0.1,
+            test_split=0.2,
             random_seed=args.seed
         )
         
@@ -171,12 +171,11 @@ def main():
         if not args.train_languages or not args.test_languages:
             raise ValueError("Cross-lingual 모드에서는 --train_languages와 --test_languages를 지정해야 합니다.")
         
-        # Cross-lingual split
+        # Cross-lingual split (7:1:2)
         train_indices, val_indices, test_indices = create_cross_lingual_split(
             dataset.data,
             train_languages=args.train_languages,
             test_languages=args.test_languages,
-            val_split=0.2,
             random_seed=args.seed
         )
         
