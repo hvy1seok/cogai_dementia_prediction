@@ -39,6 +39,8 @@ for i in {0..3}; do
     echo "  실험 $((i+1)): ${EXPERIMENT_NAMES[$i]}"
 done
 echo ""
+echo "⏳ Early Stopping 설정: Validation AUC 기준 15 epochs patience"
+echo ""
 
 # Python 명령어 확인
 PYTHON_CMD=""

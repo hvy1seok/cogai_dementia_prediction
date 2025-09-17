@@ -834,4 +834,48 @@ def create_model(config) -> SigLIPDementiaClassifier:
         focal_gamma=config.focal_gamma,
         optimizer_type=config.optimizer_type,
         sam_rho=config.sam_rho
-    ) 
+    )
+
+def create_callbacks(training_config, checkpoint_dir):
+    """PyTorch Lightning callbacks 생성"""
+    from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
+    import os
+    
+    # 체크포인트 디렉토리 생성
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    # ModelCheckpoint callback (validation AUC 기준)
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=checkpoint_dir,
+        filename="best_model_{epoch:02d}_{val_auc:.3f}",
+        monitor="val_auc",
+        mode="max",
+        save_top_k=1,
+        save_last=True,
+        verbose=True
+    )
+    
+    # EarlyStopping callback (validation AUC 기준)
+    early_stopping_callback = EarlyStopping(
+        monitor="val_auc",
+        mode="max",
+        patience=getattr(training_config, 'early_stopping_patience', 15),
+        verbose=True,
+        strict=False  # metric이 없어도 오류 발생 안함
+    )
+    
+    # Learning Rate Monitor
+    lr_monitor = LearningRateMonitor(logging_interval="epoch")
+    
+    callbacks = [
+        checkpoint_callback,
+        early_stopping_callback,
+        lr_monitor
+    ]
+    
+    print(f"✅ Callbacks 생성 완료:")
+    print(f"   - ModelCheckpoint: validation AUC 기준 베스트 모델 저장")
+    print(f"   - EarlyStopping: validation AUC 기준 {getattr(training_config, 'early_stopping_patience', 15)} epochs patience")
+    print(f"   - LearningRateMonitor: 학습률 추적")
+    
+    return callbacks, checkpoint_callback 

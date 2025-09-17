@@ -599,6 +599,8 @@ def train_model(config: SigLIPSAMConfig):
     # 훈련 루프
     best_val_auc = 0.0
     best_model_path = None
+    early_stopping_patience = getattr(config, 'early_stopping_patience', 15)
+    epochs_without_improvement = 0
     
     for epoch in range(config.num_epochs):
         print(f"\n=== Epoch {epoch+1}/{config.num_epochs} ===")
@@ -671,11 +673,21 @@ def train_model(config: SigLIPSAMConfig):
         if 'optimal_threshold' in test_metrics:
             print(f"🎯 테스트 최적 threshold: {test_metrics['optimal_threshold']:.3f}")
         
-        # 베스트 모델 저장 (validation AUC 기준)
+        # 베스트 모델 저장 및 Early Stopping (validation AUC 기준)
         if val_metrics['auc'] > best_val_auc:
             best_val_auc = val_metrics['auc']
             best_model_path = save_checkpoint(model, optimizer, epoch + 1, val_metrics, config, is_best=True)
+            epochs_without_improvement = 0
             print(f"🏆 새로운 베스트 모델! Validation AUC: {best_val_auc:.4f}")
+        else:
+            epochs_without_improvement += 1
+            print(f"⏳ 개선 없음: {epochs_without_improvement}/{early_stopping_patience} epochs")
+        
+        # Early Stopping 체크
+        if epochs_without_improvement >= early_stopping_patience:
+            print(f"\n🛑 Early Stopping! {early_stopping_patience} epochs 동안 validation AUC 개선 없음")
+            print(f"🏆 최종 베스트 Validation AUC: {best_val_auc:.4f}")
+            break
         
         # 정기 체크포인트 저장
         if (epoch + 1) % config.save_interval == 0:

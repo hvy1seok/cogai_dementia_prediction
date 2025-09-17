@@ -38,6 +38,7 @@ echo "  에포크 수: $NUM_EPOCHS"
 echo "  옵티마이저: $OPTIMIZER_TYPE (rho=$SAM_RHO)"
 echo "  손실 함수: $LOSS_TYPE (alpha=$FOCAL_ALPHA, gamma=$FOCAL_GAMMA)"
 echo "  클래스 가중치: $AUTO_CLASS_WEIGHTS (자동 불균형 보정)"
+echo "  Early Stopping: Validation AUC 기준 15 epochs patience"
 echo ""
 
 # Python 명령어 확인

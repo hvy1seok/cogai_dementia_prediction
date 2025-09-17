@@ -15,7 +15,7 @@ from datetime import datetime
 
 from config import SigLIPConfig, TrainingConfig
 from data_processor import create_dataloaders
-from model import create_model, SigLIPDementiaClassifier
+from model import create_model, SigLIPDementiaClassifier, create_callbacks
 from language_parsers import get_language_parser, parse_all_languages
 
 def setup_wandb(config: SigLIPConfig, training_config: TrainingConfig):

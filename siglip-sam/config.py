@@ -29,6 +29,7 @@ class SigLIPSAMConfig:
     num_epochs: int = 100
     warmup_steps: int = 100
     weight_decay: float = 0.01
+    early_stopping_patience: int = 15  # Validation AUC 기준 Early Stopping
     
     # 손실 함수 설정
     loss_type: str = "focal"  # "cross_entropy", "focal", "bce"

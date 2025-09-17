@@ -36,6 +36,7 @@ echo "  손실 함수: $LOSS_TYPE"
 echo "  Focal Alpha: $FOCAL_ALPHA (자동 계산으로 대체됨)"
 echo "  Focal Gamma: $FOCAL_GAMMA"
 echo "  클래스 가중치: 자동 불균형 보정 활성화"
+echo "  Early Stopping: Validation AUC 기준 15 epochs patience"
 echo ""
 
 # Python 명령어 확인

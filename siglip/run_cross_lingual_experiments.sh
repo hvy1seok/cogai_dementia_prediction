@@ -37,6 +37,8 @@ fi
 
 echo "Python 명령어: $PYTHON_CMD"
 echo ""
+echo "⏳ Early Stopping 설정: Validation AUC 기준 15 epochs patience"
+echo ""
 
 # 실험 카운터
 EXPERIMENT_COUNT=0
