@@ -565,6 +565,11 @@ def train_model(config: SigLIPSAMConfig):
     model = SigLIPSAMDementiaClassifier(config)
     model.to(config.device)
     
+    # 클래스 가중치 계산 및 손실 함수 설정
+    from data_processor import compute_class_weights
+    class_weights = compute_class_weights(train_loader.dataset, config)
+    model.setup_loss_function(class_weights)
+    
     # 옵티마이저 생성
     optimizer = model.create_optimizer(config)
     

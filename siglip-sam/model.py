@@ -23,17 +23,29 @@ except ImportError:
 class FocalLoss(nn.Module):
     """
     Focal Loss 구현 - 불균형 데이터셋에 효과적
+    alpha가 리스트/텐서인 경우 클래스별 가중치 적용
     """
     def __init__(self, alpha=1, gamma=2, reduction='mean'):
         super(FocalLoss, self).__init__()
-        self.alpha = alpha
+        if isinstance(alpha, (list, tuple)):
+            self.alpha = torch.tensor(alpha, dtype=torch.float32)
+        else:
+            self.alpha = alpha
         self.gamma = gamma
         self.reduction = reduction
     
     def forward(self, inputs, targets):
         ce_loss = F.cross_entropy(inputs, targets, reduction='none')
         pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
+        
+        # 클래스별 alpha 가중치 적용
+        if isinstance(self.alpha, torch.Tensor):
+            # alpha가 텐서인 경우 클래스별 가중치 적용
+            alpha_t = self.alpha.gather(0, targets.long()).to(inputs.device)
+            focal_loss = alpha_t * (1-pt)**self.gamma * ce_loss
+        else:
+            # alpha가 스칼라인 경우 기존 방식
+            focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
         
         if self.reduction == 'mean':
             return focal_loss.mean()
@@ -82,16 +94,37 @@ class SigLIPSAMDementiaClassifier(nn.Module):
             'Mandarin': 9  # Chinese와 동일하게 처리
         }
         
-        # 손실 함수 초기화
-        if config.loss_type == "focal":
-            self.criterion = FocalLoss(alpha=config.focal_alpha, gamma=config.focal_gamma)
-            print(f"🎯 Focal Loss 사용: alpha={config.focal_alpha}, gamma={config.focal_gamma}")
-        elif config.loss_type == "bce":
+        # 손실 함수는 나중에 클래스 가중치와 함께 초기화
+        self.config = config
+        self.criterion = None  # 나중에 설정
+    
+    def setup_loss_function(self, class_weights=None):
+        """손실 함수 초기화 - 클래스 가중치 적용"""
+        if self.config.loss_type == "focal":
+            if class_weights is not None and self.config.auto_class_weights:
+                # 클래스 가중치 자동 적용
+                alpha = class_weights
+                print(f"🎯 Focal Loss 사용: alpha={alpha} (자동 계산), gamma={self.config.focal_gamma}")
+                print(f"   정상 클래스 가중치: {alpha[0]:.3f}, 치매 클래스 가중치: {alpha[1]:.3f}")
+            else:
+                # 수동 설정 또는 균등 가중치
+                alpha = self.config.focal_alpha
+                print(f"🎯 Focal Loss 사용: alpha={alpha} (수동 설정), gamma={self.config.focal_gamma}")
+            
+            self.criterion = FocalLoss(alpha=alpha, gamma=self.config.focal_gamma)
+            
+        elif self.config.loss_type == "bce":
             self.criterion = nn.BCEWithLogitsLoss()
             print("⚖️ BCE Loss 사용")
         else:
-            self.criterion = nn.CrossEntropyLoss()
-            print("📊 Cross Entropy Loss 사용")
+            if class_weights is not None and self.config.auto_class_weights:
+                # CrossEntropy에도 클래스 가중치 적용
+                weight_tensor = torch.tensor(class_weights, dtype=torch.float32)
+                self.criterion = nn.CrossEntropyLoss(weight=weight_tensor)
+                print(f"📊 Cross Entropy Loss 사용: 클래스 가중치 {class_weights}")
+            else:
+                self.criterion = nn.CrossEntropyLoss()
+                print("📊 Cross Entropy Loss 사용")
     
     def forward(self, batch):
         """

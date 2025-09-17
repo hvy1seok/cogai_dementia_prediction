@@ -32,8 +32,9 @@ class SigLIPSAMConfig:
     
     # 손실 함수 설정
     loss_type: str = "focal"  # "cross_entropy", "focal", "bce"
-    focal_alpha: float = 1.0          # Focal Loss alpha 파라미터
+    focal_alpha: float = 1.0          # Focal Loss alpha 파라미터 (또는 "auto"로 자동 계산)
     focal_gamma: float = 2.0          # Focal Loss gamma 파라미터
+    auto_class_weights: bool = True   # 클래스 불균형 자동 보정
     
     # 옵티마이저 설정
     optimizer_type: str = "sam"       # "adamw", "lion", "sam"

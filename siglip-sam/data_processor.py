@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split
 from collections import Counter
 import soundfile as sf
 from language_parsers import parse_all_languages, get_language_parser
+from sklearn.utils.class_weight import compute_class_weight
 
 class AudioToMelSpectrogram:
     """오디오를 멜스펙토그램으로 변환하는 클래스"""
@@ -394,6 +395,46 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
                       f"검증 {val_count}개 ({val_count/(train_count+val_count)*100:.1f}%)")
     
     return train_indices, val_indices, test_indices
+
+def compute_class_weights(dataset, config):
+    """클래스 불균형을 고려한 가중치 자동 계산"""
+    if not config.auto_class_weights:
+        return None
+    
+    # 모든 라벨 수집
+    labels = [item['label'] for item in dataset.data]
+    unique_labels = np.unique(labels)
+    
+    # sklearn을 사용한 클래스 가중치 계산 (inverse frequency)
+    class_weights = compute_class_weight(
+        class_weight='balanced',
+        classes=unique_labels,
+        y=labels
+    )
+    
+    # 라벨별 통계 출력
+    label_counts = Counter(labels)
+    total_samples = len(labels)
+    
+    print(f"\n📊 클래스 불균형 분석:")
+    label_names = {0: '정상', 1: '치매'}
+    
+    for i, (label, weight) in enumerate(zip(unique_labels, class_weights)):
+        count = label_counts[label]
+        percentage = count / total_samples * 100
+        print(f"  {label_names[label]} (라벨 {label}): {count}개 ({percentage:.1f}%) → 가중치: {weight:.3f}")
+    
+    # 치매가 더 많은 경우 경고
+    dementia_count = label_counts[1]
+    normal_count = label_counts[0]
+    if dementia_count > normal_count:
+        ratio = dementia_count / normal_count
+        print(f"⚠️ 치매 데이터가 {ratio:.1f}배 더 많음 → 정상 클래스에 {class_weights[0]:.3f} 가중치 적용")
+    else:
+        ratio = normal_count / dementia_count
+        print(f"ℹ️ 정상 데이터가 {ratio:.1f}배 더 많음 → 치매 클래스에 {class_weights[1]:.3f} 가중치 적용")
+    
+    return class_weights.tolist()
 
 def create_dataloaders(data_dir: str,
                       processor: AutoProcessor,

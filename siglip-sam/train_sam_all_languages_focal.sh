@@ -18,8 +18,9 @@ LANGUAGES="English Greek Spanish Mandarin"
 OPTIMIZER_TYPE="sam"
 SAM_RHO=0.05
 LOSS_TYPE="focal"
-FOCAL_ALPHA=1.0
+FOCAL_ALPHA=1.0  # auto_class_weights=True이면 자동 계산됨
 FOCAL_GAMMA=2.0
+AUTO_CLASS_WEIGHTS=true  # 클래스 불균형 자동 보정
 
 # 출력 디렉토리 생성
 mkdir -p "$OUTPUT_DIR"
@@ -36,6 +37,7 @@ echo "  학습률: $LEARNING_RATE"
 echo "  에포크 수: $NUM_EPOCHS"
 echo "  옵티마이저: $OPTIMIZER_TYPE (rho=$SAM_RHO)"
 echo "  손실 함수: $LOSS_TYPE (alpha=$FOCAL_ALPHA, gamma=$FOCAL_GAMMA)"
+echo "  클래스 가중치: $AUTO_CLASS_WEIGHTS (자동 불균형 보정)"
 echo ""
 
 # Python 명령어 확인
@@ -69,7 +71,8 @@ $PYTHON_CMD trainer.py \
     --sam_rho $SAM_RHO \
     --loss_type "$LOSS_TYPE" \
     --focal_alpha $FOCAL_ALPHA \
-    --focal_gamma $FOCAL_GAMMA
+    --focal_gamma $FOCAL_GAMMA \
+    --auto_class_weights $AUTO_CLASS_WEIGHTS
 
 # 결과 확인
 if [ $? -eq 0 ]; then
