@@ -492,13 +492,10 @@ def train_model(config: SigLIPSAMConfig):
         # 검증
         val_loss, val_metrics = evaluate(model, val_loader, config, use_mixed_precision, title_prefix="Val")
         
-        # 테스트 (참고용)
-        test_loss, test_metrics = evaluate(model, test_loader, config, use_mixed_precision, title_prefix="Test")
-        
         # 스케줄러 업데이트
         scheduler.step()
         
-        # wandb 로깅
+        # wandb 로깅 (훈련 중에는 train/val만)
         wandb_log = {
             'epoch': epoch + 1,
             'train_loss': train_loss,
@@ -507,29 +504,20 @@ def train_model(config: SigLIPSAMConfig):
             'val_loss': val_loss,
             'val_accuracy': val_metrics['accuracy'],
             'val_auc': val_metrics['auc'],
-            'test_loss': test_loss,
-            'test_accuracy': test_metrics['accuracy'],
-            'test_auc': test_metrics['auc'],
             'learning_rate': optimizer.param_groups[0]['lr']
         }
         
-        # Multi-Loss components 추가
-        for prefix, metrics_dict in [('train', train_metrics), ('val', val_metrics), ('test', test_metrics)]:
+        # Multi-Loss components 추가 (훈련 중에는 train/val만)
+        for prefix, metrics_dict in [('train', train_metrics), ('val', val_metrics)]:
             for key, value in metrics_dict.items():
                 if any(loss_type in key for loss_type in ['classification_loss', 'silc_', 'sigmoid_', 'loca_']):
                     wandb_log[f'{prefix}_{key}'] = value
         
-        # 언어별 메트릭 추가 (테스트에서만)
-        for key, value in test_metrics.items():
-            if any(lang in key for lang in ['English', 'Greek', 'Spanish', 'Mandarin']):
-                wandb_log[f'test_{key}'] = value
-        
         wandb.log(wandb_log)
         
-        # 결과 출력
+        # 결과 출력 (훈련 중에는 train/val만)
         print(f"훈련 - Loss: {train_loss:.4f}, Acc: {train_metrics['accuracy']:.4f}, AUC: {train_metrics['auc']:.4f}")
         print(f"검증 - Loss: {val_loss:.4f}, Acc: {val_metrics['accuracy']:.4f}, AUC: {val_metrics['auc']:.4f}")
-        print(f"테스트 - Loss: {test_loss:.4f}, Acc: {test_metrics['accuracy']:.4f}, AUC: {test_metrics['auc']:.4f}")
         
         # 베스트 모델 저장 및 Early Stopping
         if val_metrics['auc'] > best_val_auc:
@@ -554,6 +542,41 @@ def train_model(config: SigLIPSAMConfig):
     print(f"\n=== 진정한 SigLIP2 훈련 완료 ===")
     print(f"🏆 베스트 Validation AUC: {best_val_auc:.4f}")
     print(f"💾 베스트 모델: {best_model_path}")
+    
+    # 훈련 완료 후 최종 테스트 평가
+    print(f"\n🧪 최종 테스트 평가 시작...")
+    if best_model_path and os.path.exists(best_model_path):
+        # 베스트 모델 로드
+        checkpoint = torch.load(best_model_path, map_location=config.device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print(f"✅ 베스트 모델 로드 완료: {best_model_path}")
+    
+    # 최종 테스트 평가
+    final_test_loss, final_test_metrics = evaluate(model, test_loader, config, use_mixed_precision, title_prefix="Final Test")
+    
+    # 최종 테스트 결과 wandb 로깅
+    final_wandb_log = {
+        'final_test_loss': final_test_loss,
+        'final_test_accuracy': final_test_metrics['accuracy'],
+        'final_test_auc': final_test_metrics['auc'],
+    }
+    
+    # 최종 테스트 Multi-Loss components 추가
+    for key, value in final_test_metrics.items():
+        if any(loss_type in key for loss_type in ['classification_loss', 'silc_', 'sigmoid_', 'loca_']):
+            final_wandb_log[f'final_test_{key}'] = value
+    
+    # 언어별 메트릭 추가
+    for key, value in final_test_metrics.items():
+        if any(lang in key for lang in ['English', 'Greek', 'Spanish', 'Mandarin']):
+            final_wandb_log[f'final_test_{key}'] = value
+    
+    wandb.log(final_wandb_log)
+    
+    print(f"\n🎯 최종 테스트 결과:")
+    print(f"  Loss: {final_test_loss:.4f}")
+    print(f"  Accuracy: {final_test_metrics['accuracy']:.4f}")
+    print(f"  AUC: {final_test_metrics['auc']:.4f}")
     
     # wandb 종료
     wandb.finish()
