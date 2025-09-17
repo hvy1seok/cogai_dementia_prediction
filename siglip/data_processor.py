@@ -11,7 +11,7 @@ import pandas as pd
 from PIL import Image
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
-from transformers import AutoProcessor  # SigLIP2 지원
+from transformers import AutoProcessor, AutoTokenizer  # SigLIP2 지원
 from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.model_selection import train_test_split
 from collections import Counter
@@ -87,7 +87,8 @@ class DementiaDataset(Dataset):
     
     def __init__(self, 
                  data_dir: str,
-                 processor: AutoProcessor,  # SigLIP2 지원
+                 processor: AutoProcessor,  # SigLIP2 이미지 프로세서
+                 tokenizer: AutoTokenizer,  # Gemma 토크나이저
                  audio_processor: AudioToMelSpectrogram,
                  split: str = "train",
                  max_length: int = 512,
@@ -95,6 +96,7 @@ class DementiaDataset(Dataset):
         
         self.data_dir = data_dir
         self.processor = processor
+        self.tokenizer = tokenizer  # Gemma 토크나이저 추가
         self.audio_processor = audio_processor
         self.split = split
         self.max_length = max_length
@@ -161,22 +163,35 @@ class DementiaDataset(Dataset):
         # 텍스트 전처리 (언어 무관을 위해 소문자 변환)
         text = item['text'].lower().strip()
         
-        # SigLIP2 프로세서로 처리
-        inputs = self.processor(
-            text=text,
-            images=image,
+        # Gemma 토크나이저로 텍스트 처리 (256K vocab, multilingual)
+        text_inputs = self.tokenizer(
+            text,
             padding="max_length",
             max_length=self.max_length,
             truncation=True,
             return_tensors="pt"
         )
         
-        # 배치 차원 제거
-        for key in inputs:
-            if isinstance(inputs[key], torch.Tensor):
-                inputs[key] = inputs[key].squeeze(0)
+        # SigLIP2 이미지 프로세서로 이미지 처리
+        image_inputs = self.processor(
+            images=image,
+            return_tensors="pt"
+        )
         
-        # SigLIP2는 attention_mask가 없을 수 있으므로 생성
+        # 입력 결합
+        inputs = {}
+        
+        # 텍스트 입력 (Gemma 토크나이저)
+        for key in text_inputs:
+            if isinstance(text_inputs[key], torch.Tensor):
+                inputs[key] = text_inputs[key].squeeze(0)
+        
+        # 이미지 입력 (SigLIP2 프로세서)
+        for key in image_inputs:
+            if isinstance(image_inputs[key], torch.Tensor):
+                inputs[key] = image_inputs[key].squeeze(0)
+        
+        # attention_mask 확인 및 생성
         if 'attention_mask' not in inputs and 'input_ids' in inputs:
             inputs['attention_mask'] = torch.ones_like(inputs['input_ids'])
         
@@ -432,7 +447,8 @@ def compute_class_weights(dataset, config):
     return class_weights
 
 def create_dataloaders(data_dir: str,
-                      processor: AutoProcessor,  # SigLIP2 지원
+                      processor: AutoProcessor,  # SigLIP2 이미지 프로세서
+                      tokenizer: AutoTokenizer,  # Gemma 토크나이저
                       config,
                       cross_lingual_mode: bool = False,
                       train_languages: List[str] = None,
@@ -458,6 +474,7 @@ def create_dataloaders(data_dir: str,
         train_full_dataset = DementiaDataset(
             data_dir=data_dir,
             processor=processor,
+            tokenizer=tokenizer,
             audio_processor=audio_processor,
             max_length=config.max_length,
             languages=train_languages
@@ -479,6 +496,7 @@ def create_dataloaders(data_dir: str,
         test_dataset = DementiaDataset(
             data_dir=data_dir,
             processor=processor,
+            tokenizer=tokenizer,
             audio_processor=audio_processor,
             max_length=config.max_length,
             languages=test_languages
@@ -496,6 +514,7 @@ def create_dataloaders(data_dir: str,
         full_dataset = DementiaDataset(
             data_dir=data_dir,
             processor=processor,
+            tokenizer=tokenizer,
             audio_processor=audio_processor,
             max_length=config.max_length,
             languages=config.languages

@@ -126,9 +126,14 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     else:
         print("GPU를 찾을 수 없습니다. CPU를 사용합니다.")
     
-    # SigLIP2 프로세서 로드
+    # SigLIP2 프로세서 및 Gemma 토크나이저 로드
     print("SigLIP2 프로세서 로드 중...")
     processor = AutoProcessor.from_pretrained(config.model_name)  # SigLIP2 지원
+    
+    print("Gemma 토크나이저 로드 중...")
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(config.text_tokenizer)
+    print(f"✅ Gemma 토크나이저 로드 완료! Vocab size: {tokenizer.vocab_size}")
     
     # 데이터로더 생성
     print("데이터로더 생성 중...")
@@ -141,6 +146,7 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     train_loader, val_loader, test_loader = create_dataloaders(
         data_dir=config.data_dir,
         processor=processor,
+        tokenizer=tokenizer,
         config=config,
         cross_lingual_mode=cross_lingual_mode,
         train_languages=train_languages,
