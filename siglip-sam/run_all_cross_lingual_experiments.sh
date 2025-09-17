@@ -1,8 +1,8 @@
 #!/bin/bash
-# SigLIP-SAM 모든 Cross-Lingual 조합 실험 실행
-# 4가지 언어 조합을 순차적으로 실행하여 포괄적인 Cross-lingual 분석 수행
+# SigLIP-SAM 모든 Zero-shot Cross-Lingual 조합 실험 실행
+# 4가지 언어 조합을 순차적으로 실행하여 포괄적인 Zero-shot 분석 수행
 
-echo "=== SigLIP-SAM 전체 Cross-Lingual 실험 시작 ==="
+echo "=== SigLIP-SAM 전체 Zero-shot Cross-Lingual 실험 시작 ==="
 echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 

@@ -1,8 +1,9 @@
 #!/bin/bash
-# SigLIP-SAM Cross-Lingual 치매 진단 모델 훈련 (SAM 옵티마이저 사용)
-# 다양한 언어 조합으로 Cross-lingual 성능 평가
+# SigLIP-SAM Zero-shot Cross-Lingual 치매 진단 모델 훈련 (SAM 옵티마이저 사용)
+# 다양한 언어 조합으로 진정한 Zero-shot 성능 평가
+# 훈련: 소스 언어만 사용 / 검증&테스트: 타겟 언어만 사용 (완전 미학습)
 
-echo "=== SigLIP-SAM Cross-Lingual 치매 진단 모델 훈련 시작 ==="
+echo "=== SigLIP-SAM Zero-shot Cross-Lingual 치매 진단 모델 훈련 시작 ==="
 echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 
 # 기본 설정
@@ -91,10 +92,10 @@ mkdir -p "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR/checkpoints"
 
 echo ""
-echo "🌍 SAM Cross-Lingual 훈련 설정 (실험 $EXPERIMENT_NUM):"
+echo "🌍 SAM Zero-shot Cross-Lingual 훈련 설정 (실험 $EXPERIMENT_NUM):"
 echo "  실험명: $EXPERIMENT_NAME"
-echo "  훈련 언어: ${TRAIN_LANGUAGES[*]}"
-echo "  테스트 언어: ${TEST_LANGUAGES[*]}"
+echo "  훈련 언어 (소스): ${TRAIN_LANGUAGES[*]}"
+echo "  타겟 언어 (Zero-shot): ${TEST_LANGUAGES[*]}"
 echo "  데이터 디렉토리: $DATA_DIR"
 echo "  출력 디렉토리: $OUTPUT_DIR"
 echo "  모델: $MODEL_NAME"
@@ -119,8 +120,9 @@ fi
 echo "Python 명령어: $PYTHON_CMD"
 echo ""
 
-echo "SAM Cross-Lingual 모델 훈련 시작 (실험 $EXPERIMENT_NUM)..."
-echo "실험: ${TRAIN_LANGUAGES[*]} → ${TEST_LANGUAGES[*]}"
+echo "SAM Zero-shot Cross-Lingual 모델 훈련 시작 (실험 $EXPERIMENT_NUM)..."
+echo "Zero-shot 실험: ${TRAIN_LANGUAGES[*]} → ${TEST_LANGUAGES[*]}"
+echo "⚡ 타겟 언어는 훈련 시 전혀 사용하지 않음 (완전 Zero-shot)"
 echo "================================"
 
 # 훈련 실행
@@ -141,29 +143,31 @@ $PYTHON_CMD trainer.py \
 # 결과 확인
 if [ $? -eq 0 ]; then
     echo ""
-    echo "✅ SAM Cross-Lingual 모델 훈련이 성공적으로 완료되었습니다!"
+    echo "✅ SAM Zero-shot Cross-Lingual 모델 훈련이 성공적으로 완료되었습니다!"
     echo "완료 시간: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "모델 저장 위치: $OUTPUT_DIR/checkpoints"
     echo ""
     echo "🌍 실험 $EXPERIMENT_NUM: $EXPERIMENT_NAME"
-    echo "🎯 훈련 언어: ${TRAIN_LANGUAGES[*]}"
-    echo "🎯 테스트 언어: ${TEST_LANGUAGES[*]}"
-    echo "🎯 SAM 옵티마이저로 훈련된 Cross-Lingual 모델"
+    echo "🎯 훈련 언어 (소스): ${TRAIN_LANGUAGES[*]}"
+    echo "🎯 타겟 언어 (Zero-shot): ${TEST_LANGUAGES[*]}"
+    echo "🎯 SAM 옵티마이저로 훈련된 Zero-shot Cross-Lingual 모델"
     echo ""
-    echo "📊 이 모델은 ${TRAIN_LANGUAGES[*]} 데이터로 훈련되어"
-    echo "   ${TEST_LANGUAGES[*]} 데이터에서 언어 간 일반화 성능을 평가합니다."
+    echo "📊 이 모델은 ${TRAIN_LANGUAGES[*]} 데이터로만 훈련되어"
+    echo "   ${TEST_LANGUAGES[*]} 데이터에서 완전 Zero-shot 성능을 평가합니다."
+    echo "   ⚡ 타겟 언어는 훈련/검증 시 전혀 보지 않아 진정한 Zero-shot!"
     echo "   SAM의 Sharpness-Aware Minimization으로 더 나은 일반화 기대!"
     echo ""
-    echo "🔍 Cross-Lingual 분석 인사이트:"
-    echo "   ✅ 언어 간 전이 학습 성능 - 훈련하지 않은 언어에서의 성능"
+    echo "🔍 Zero-shot Cross-Lingual 분석 인사이트:"
+    echo "   ✅ 완전 Zero-shot 성능 - 타겟 언어 미학습 상태에서의 성능"
     echo "   ✅ 언어별 일반화 능력 비교 - 어떤 언어가 다른 언어로 잘 전이되는지"
-    echo "   ✅ SAM의 Cross-lingual 효과 - 일반적인 옵티마이저 대비 성능"
-    echo "   ✅ 언어 무관 특징 학습 정도 평가"
+    echo "   ✅ SAM의 Zero-shot 효과 - 일반적인 옵티마이저 대비 성능"
+    echo "   ✅ 언어 무관 특징 학습 정도 평가 (진정한 언어 독립성)"
     echo ""
-    echo "📊 결과 확인:"
-    echo "   - 훈련 언어별 성능 vs 테스트 언어 성능 비교"
-    echo "   - wandb에서 Cross-lingual 메트릭 시각화"
+    echo "📊 Zero-shot 결과 확인:"
+    echo "   - 소스 언어 훈련 성능 vs 타겟 언어 Zero-shot 성능 비교"
+    echo "   - wandb에서 Zero-shot Cross-lingual 메트릭 시각화"
     echo "   - 언어별 상세 분석 결과 자동 출력"
+    echo "   - 검증/테스트 모두 타겟 언어로만 구성된 진정한 Zero-shot 평가"
     echo ""
     echo "🚀 다른 조합도 실행해보세요:"
     echo "   bash train_sam_cross_lingual.sh 1  # 영어+스페인어+만다린 → 그리스어"

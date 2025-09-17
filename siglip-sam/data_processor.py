@@ -408,11 +408,11 @@ def create_dataloaders(data_dir: str,
     )
     
     if cross_lingual_mode:
-        print("🌍 Cross-Lingual 모드: 언어별로 분리된 훈련/테스트 데이터셋 생성")
+        print("🌍 Cross-Lingual 모드: Zero-shot 평가를 위한 데이터셋 생성")
         print(f"  훈련 언어: {train_languages}")
-        print(f"  테스트 언어: {test_languages}")
+        print(f"  타겟 언어 (Zero-shot): {test_languages}")
         
-        # 훈련용 데이터셋 생성 (train + val)
+        # 훈련용 데이터셋 생성 (소스 언어만 사용, 100% 훈련용)
         train_full_dataset = DementiaDataset(
             data_dir=data_dir,
             processor=processor,
@@ -421,20 +421,11 @@ def create_dataloaders(data_dir: str,
             languages=train_languages
         )
         
-        # 훈련 데이터를 train:val = 7:1로 분할
-        train_indices, val_indices, _ = create_stratified_split(
-            train_full_dataset,
-            train_split=0.875,  # 7/(7+1) = 0.875
-            val_split=0.125,    # 1/(7+1) = 0.125
-            test_split=0.0,     # Cross-lingual에서는 test는 다른 언어
-            random_seed=config.random_seed
-        )
+        # 소스 언어는 모두 훈련용으로 사용 (zero-shot을 위해)
+        train_dataset = train_full_dataset
         
-        train_dataset = Subset(train_full_dataset, train_indices)
-        val_dataset = Subset(train_full_dataset, val_indices)
-        
-        # 테스트용 데이터셋 생성
-        test_dataset = DementiaDataset(
+        # 타겟 언어 데이터셋 생성
+        target_full_dataset = DementiaDataset(
             data_dir=data_dir,
             processor=processor,
             audio_processor=audio_processor,
@@ -442,10 +433,32 @@ def create_dataloaders(data_dir: str,
             languages=test_languages
         )
         
-        print(f"📊 Cross-Lingual 데이터 분할:")
+        # 타겟 언어를 val:test = 1:1로 분할 (zero-shot validation & test)
+        target_indices, _, _ = create_stratified_split(
+            target_full_dataset,
+            train_split=0.0,    # 훈련에는 사용하지 않음
+            val_split=0.5,      # 절반은 validation (zero-shot)
+            test_split=0.5,     # 절반은 test (zero-shot)
+            random_seed=config.random_seed
+        )
+        
+        # 타겟 언어 인덱스를 val/test로 분할
+        target_all_indices = list(range(len(target_full_dataset)))
+        target_val_indices, target_test_indices = train_test_split(
+            target_all_indices,
+            test_size=0.5,  # 절반씩 분할
+            stratify=[target_full_dataset.data[i]['label'] for i in target_all_indices],
+            random_state=config.random_seed
+        )
+        
+        val_dataset = Subset(target_full_dataset, target_val_indices)
+        test_dataset = Subset(target_full_dataset, target_test_indices)
+        
+        print(f"📊 Zero-shot Cross-Lingual 데이터 분할:")
         print(f"  훈련 데이터: {len(train_dataset)} 샘플 (언어: {train_languages})")
-        print(f"  검증 데이터: {len(val_dataset)} 샘플 (언어: {train_languages})")
-        print(f"  테스트 데이터: {len(test_dataset)} 샘플 (언어: {test_languages})")
+        print(f"  검증 데이터: {len(val_dataset)} 샘플 (Zero-shot 언어: {test_languages})")
+        print(f"  테스트 데이터: {len(test_dataset)} 샘플 (Zero-shot 언어: {test_languages})")
+        print(f"  ✨ 진정한 Zero-shot 평가: 타겟 언어는 훈련 시 전혀 보지 않음")
         
     else:
         print("🎯 일반 모드: Stratified Split 수행 중...")

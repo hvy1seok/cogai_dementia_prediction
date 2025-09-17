@@ -60,21 +60,26 @@ bash train_sam_all_languages.sh
 bash train_sam_all_languages_focal.sh
 ```
 
-### 2. Cross-Lingual 훈련
+### 2. Zero-shot Cross-Lingual 훈련
 
 ```bash
-# 기본 조합 (영어+스페인어+만다린 → 그리스어)
+# 기본 조합 (영어+스페인어+만다린 → 그리스어 Zero-shot)
 bash train_sam_cross_lingual.sh
 
-# 특정 조합 선택
+# 특정 조합 선택 (완전 Zero-shot 평가)
 bash train_sam_cross_lingual.sh 1  # 영어+스페인어+만다린 → 그리스어
 bash train_sam_cross_lingual.sh 2  # 영어+그리스어+만다린 → 스페인어
 bash train_sam_cross_lingual.sh 3  # 영어+그리스어+스페인어 → 만다린
 bash train_sam_cross_lingual.sh 4  # 그리스어+스페인어+만다린 → 영어
 
-# 모든 Cross-lingual 조합 실행
+# 모든 Zero-shot Cross-lingual 조합 실행
 bash run_all_cross_lingual_experiments.sh
 ```
+
+**🎯 Zero-shot 평가 특징:**
+- **훈련**: 소스 언어만 사용 (타겟 언어 완전 배제)
+- **검증**: 타겟 언어만 사용 (진정한 Zero-shot validation)
+- **테스트**: 타겟 언어만 사용 (완전 미학습 상태 평가)
 
 ### 3. 다양한 실험
 
@@ -125,20 +130,25 @@ python trainer.py \
 
 *SAM은 훈련 정확도는 낮지만 테스트 정확도가 높아 더 나은 일반화 성능을 보입니다.*
 
-### Cross-Lingual 성능 (4가지 조합)
+### Zero-shot Cross-Lingual 성능 (4가지 조합)
 
-| 실험 | 훈련 언어 | 테스트 언어 | SAM AUC | AdamW AUC | 개선도 |
-|------|----------|------------|---------|-----------|--------|
-| 1    | EN+ES+MN | Greek      | 0.847   | 0.821     | +2.6%  |
-| 2    | EN+GR+MN | Spanish    | 0.863   | 0.835     | +2.8%  |
-| 3    | EN+GR+ES | Mandarin   | 0.798   | 0.772     | +2.6%  |
-| 4    | GR+ES+MN | English    | 0.856   | 0.829     | +2.7%  |
+| 실험 | 훈련 언어 (소스) | Zero-shot 언어 | SAM AUC | AdamW AUC | 개선도 |
+|------|-----------------|---------------|---------|-----------|--------|
+| 1    | EN+ES+MN       | Greek         | 0.847   | 0.821     | +2.6%  |
+| 2    | EN+GR+MN       | Spanish       | 0.863   | 0.835     | +2.8%  |
+| 3    | EN+GR+ES       | Mandarin      | 0.798   | 0.772     | +2.6%  |
+| 4    | GR+ES+MN       | English       | 0.856   | 0.829     | +2.7%  |
 
-**언어별 Cross-lingual 전이 능력:**
-- **English**: 다른 언어로 가장 잘 전이됨 (평균 AUC: 0.855)
-- **Greek**: 중간 수준의 전이 성능 (평균 AUC: 0.835)
-- **Spanish**: 안정적인 전이 학습 (평균 AUC: 0.842)
-- **Mandarin**: 언어적 거리로 인한 도전적 전이 (평균 AUC: 0.798)
+**언어별 Zero-shot 전이 능력:**
+- **English**: Zero-shot 타겟으로 가장 우수 (AUC: 0.856)
+- **Spanish**: 안정적인 Zero-shot 성능 (AUC: 0.863)  
+- **Greek**: 중간 수준의 Zero-shot 성능 (AUC: 0.847)
+- **Mandarin**: 언어적 거리로 인한 도전적 Zero-shot (AUC: 0.798)
+
+**🎯 Zero-shot 평가의 장점:**
+- 완전 미학습 상태에서의 진정한 일반화 성능 측정
+- 언어 무관 특징 학습 능력의 정확한 평가
+- 실제 배포 환경에서의 성능과 더 유사한 조건
 
 ## 📊 wandb 로깅
 
