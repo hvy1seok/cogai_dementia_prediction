@@ -8,7 +8,7 @@ echo "시작 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 # 기본 설정
 DATA_DIR="../../training_dset"
 MODEL_NAME="google/siglip2-base-patch16-naflex"
-BATCH_SIZE=32
+BATCH_SIZE=64
 LEARNING_RATE=2e-5
 NUM_EPOCHS=100
 
