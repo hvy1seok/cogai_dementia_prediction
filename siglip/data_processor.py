@@ -237,24 +237,41 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
     # 환자 단위로 분할 수행
     from sklearn.model_selection import train_test_split
     
-    # 첫 번째 분할: train vs (val + test) - 환자 단위
-    train_patient_indices, temp_patient_indices = train_test_split(
-        patient_indices_list,
-        test_size=val_split + test_split,
-        stratify=patient_stratify_keys,
-        random_state=random_seed
-    )
-    
-    # temp 환자들의 stratify 키 생성
-    temp_patient_stratify_keys = [patient_stratify_keys[i] for i in temp_patient_indices]
-    
-    # 두 번째 분할: val vs test - 환자 단위
-    val_patient_indices, test_patient_indices = train_test_split(
-        temp_patient_indices,
-        test_size=test_split / (val_split + test_split),  # test 비율 조정
-        stratify=temp_patient_stratify_keys,
-        random_state=random_seed
-    )
+    if test_split == 0.0:
+        # Cross-lingual 모드: train/val만 분할 (test는 다른 언어)
+        if train_split == 0.0:
+            # train_split=0인 경우: 모든 데이터를 val로 사용 (Zero-shot에서 타겟 언어용)
+            val_patient_indices = patient_indices_list  # 모든 환자를 val로 사용
+            train_patient_indices = []  # 빈 리스트
+        else:
+            # 일반적인 train/val 분할
+            train_patient_indices, val_patient_indices = train_test_split(
+                patient_indices_list,
+                test_size=val_split / (train_split + val_split),  # val 비율 조정
+                stratify=patient_stratify_keys,
+                random_state=random_seed
+            )
+        test_patient_indices = []  # 빈 리스트
+    else:
+        # 일반 모드: train/val/test 3-way 분할
+        # 첫 번째 분할: train vs (val + test) - 환자 단위
+        train_patient_indices, temp_patient_indices = train_test_split(
+            patient_indices_list,
+            test_size=val_split + test_split,
+            stratify=patient_stratify_keys,
+            random_state=random_seed
+        )
+        
+        # temp 환자들의 stratify 키 생성
+        temp_patient_stratify_keys = [patient_stratify_keys[i] for i in temp_patient_indices]
+        
+        # 두 번째 분할: val vs test - 환자 단위
+        val_patient_indices, test_patient_indices = train_test_split(
+            temp_patient_indices,
+            test_size=test_split / (val_split + test_split),  # test 비율 조정
+            stratify=temp_patient_stratify_keys,
+            random_state=random_seed
+        )
     
     # 환자 인덱스를 샘플 인덱스로 변환
     train_indices = []
@@ -271,11 +288,21 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
         test_indices.extend(patient_metadata[patient_idx]['indices'])
     
     # 분할 결과 통계 출력 (환자 단위 포함)
-    print(f"\n📊 환자 단위 Stratified Split 결과 (7:1:2):")
+    if test_split == 0.0:
+        split_ratio = f"{train_split*100:.0f}:{val_split*100:.0f}"
+        print(f"\n📊 환자 단위 Stratified Split 결과 ({split_ratio}):")
+    else:
+        split_ratio = f"{train_split*100:.0f}:{val_split*100:.0f}:{test_split*100:.0f}"
+        print(f"\n📊 환자 단위 Stratified Split 결과 ({split_ratio}):")
+    
     print(f"  전체 데이터: {len(dataset)} 샘플, {len(patient_groups)} 환자")
     print(f"  훈련 데이터: {len(train_indices)} 샘플 ({len(train_indices)/len(dataset)*100:.1f}%), {len(train_patient_indices)} 환자")
     print(f"  검증 데이터: {len(val_indices)} 샘플 ({len(val_indices)/len(dataset)*100:.1f}%), {len(val_patient_indices)} 환자")
-    print(f"  테스트 데이터: {len(test_indices)} 샘플 ({len(test_indices)/len(dataset)*100:.1f}%), {len(test_patient_indices)} 환자")
+    
+    if test_split > 0.0:
+        print(f"  테스트 데이터: {len(test_indices)} 샘플 ({len(test_indices)/len(dataset)*100:.1f}%), {len(test_patient_indices)} 환자")
+    else:
+        print(f"  테스트 데이터: Cross-lingual 모드 - 별도 언어로 구성")
     
     # 환자별 샘플 수 분포
     train_samples_per_patient = [len(patient_metadata[i]['indices']) for i in train_patient_indices]
@@ -283,18 +310,27 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
     test_samples_per_patient = [len(patient_metadata[i]['indices']) for i in test_patient_indices]
     
     print(f"\n📈 환자별 샘플 수:")
-    print(f"  훈련: 평균 {sum(train_samples_per_patient)/len(train_samples_per_patient):.1f}개/환자")
-    print(f"  검증: 평균 {sum(val_samples_per_patient)/len(val_samples_per_patient):.1f}개/환자")
-    print(f"  테스트: 평균 {sum(test_samples_per_patient)/len(test_samples_per_patient):.1f}개/환자")
+    if train_samples_per_patient:
+        print(f"  훈련: 평균 {sum(train_samples_per_patient)/len(train_samples_per_patient):.1f}개/환자")
+    if val_samples_per_patient:
+        print(f"  검증: 평균 {sum(val_samples_per_patient)/len(val_samples_per_patient):.1f}개/환자")
+    if test_samples_per_patient:
+        print(f"  테스트: 평균 {sum(test_samples_per_patient)/len(test_samples_per_patient):.1f}개/환자")
     
     # 환자 분할 검증: 중복 확인
     train_patients = set([patient_metadata[i]['patient_id'] for i in train_patient_indices])
     val_patients = set([patient_metadata[i]['patient_id'] for i in val_patient_indices])
-    test_patients = set([patient_metadata[i]['patient_id'] for i in test_patient_indices])
+    
+    if test_split > 0.0:
+        test_patients = set([patient_metadata[i]['patient_id'] for i in test_patient_indices])
+        overlap_train_test = train_patients & test_patients
+        overlap_val_test = val_patients & test_patients
+    else:
+        test_patients = set()
+        overlap_train_test = set()
+        overlap_val_test = set()
     
     overlap_train_val = train_patients & val_patients
-    overlap_train_test = train_patients & test_patients
-    overlap_val_test = val_patients & test_patients
     
     if overlap_train_val or overlap_train_test or overlap_val_test:
         print(f"⚠️ 환자 중복 발견!")
@@ -305,7 +341,10 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
         if overlap_val_test:
             print(f"   Val-Test 중복: {overlap_val_test}")
     else:
-        print(f"✅ 환자 단위 분할 성공: 중복 없음")
+        if test_split > 0.0:
+            print(f"✅ 환자 단위 분할 성공: 중복 없음")
+        else:
+            print(f"✅ 환자 단위 분할 성공 (Train-Val): 중복 없음")
     
     # 훈련/검증/테스트 세트의 언어별 분포 확인
     train_lang_dist = Counter([languages[i] for i in train_indices])
@@ -322,9 +361,13 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
         test_count = test_lang_dist[lang]
         total_count = train_count + val_count + test_count
         if total_count > 0:
-            print(f"  {lang}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
-                  f"검증 {val_count}개 ({val_count/total_count*100:.1f}%), "
-                  f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
+            if test_split > 0.0:
+                print(f"  {lang}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
+                      f"검증 {val_count}개 ({val_count/total_count*100:.1f}%), "
+                      f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
+            else:
+                print(f"  {lang}: 훈련 {train_count}개 ({train_count/(train_count+val_count)*100:.1f}%), "
+                      f"검증 {val_count}개 ({val_count/(train_count+val_count)*100:.1f}%)")
     
     print(f"\n📊 라벨별 분포:")
     label_names = {0: '정상', 1: '치매'}
@@ -334,9 +377,13 @@ def create_stratified_split(dataset, train_split: float = 0.7, val_split: float 
         test_count = test_label_dist[label]
         total_count = train_count + val_count + test_count
         if total_count > 0:
-            print(f"  {label_names[label]}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
-                  f"검증 {val_count}개 ({val_count/total_count*100:.1f}%), "
-                  f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
+            if test_split > 0.0:
+                print(f"  {label_names[label]}: 훈련 {train_count}개 ({train_count/total_count*100:.1f}%), "
+                      f"검증 {val_count}개 ({val_count/total_count*100:.1f}%), "
+                      f"테스트 {test_count}개 ({test_count/total_count*100:.1f}%)")
+            else:
+                print(f"  {label_names[label]}: 훈련 {train_count}개 ({train_count/(train_count+val_count)*100:.1f}%), "
+                      f"검증 {val_count}개 ({val_count/(train_count+val_count)*100:.1f}%)")
     
     return train_indices, val_indices, test_indices
 
