@@ -20,7 +20,7 @@ SAM_RHO=0.05
 LOSS_TYPE="focal"
 FOCAL_ALPHA=1.0  # auto_class_weights=True이면 자동 계산됨
 FOCAL_GAMMA=2.0
-AUTO_CLASS_WEIGHTS=true  # 클래스 불균형 자동 보정
+AUTO_CLASS_WEIGHTS="--auto_class_weights"  # 클래스 불균형 자동 보정
 
 # 출력 디렉토리 생성
 mkdir -p "$OUTPUT_DIR"
