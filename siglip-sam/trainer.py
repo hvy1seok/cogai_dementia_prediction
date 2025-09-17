@@ -567,7 +567,15 @@ def train_model(config: SigLIPSAMConfig):
     
     # 클래스 가중치 계산 및 손실 함수 설정
     from data_processor import compute_class_weights
-    class_weights = compute_class_weights(train_loader.dataset, config)
+    
+    # 훈련 데이터셋에서 클래스 가중치 계산
+    if hasattr(train_loader.dataset, 'dataset'):
+        # Subset인 경우 원본 데이터셋 접근
+        original_dataset = train_loader.dataset.dataset
+    else:
+        original_dataset = train_loader.dataset
+    
+    class_weights = compute_class_weights(original_dataset, config)
     model.setup_loss_function(class_weights)
     
     # 옵티마이저 생성
