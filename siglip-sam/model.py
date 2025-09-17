@@ -41,8 +41,10 @@ class FocalLoss(nn.Module):
         
         # 클래스별 alpha 가중치 적용
         if hasattr(self, 'alpha') and isinstance(self.alpha, torch.Tensor):
-            # alpha가 텐서인 경우 클래스별 가중치 적용 (자동으로 올바른 디바이스에 있음)
-            alpha_t = self.alpha.gather(0, targets.long())
+            # alpha가 텐서인 경우 클래스별 가중치 적용
+            # 명시적으로 디바이스를 맞춰줌 (안전성을 위해)
+            alpha_tensor = self.alpha.to(targets.device)
+            alpha_t = alpha_tensor.gather(0, targets.long())
             focal_loss = alpha_t * (1-pt)**self.gamma * ce_loss
         else:
             # alpha가 스칼라인 경우 기존 방식
