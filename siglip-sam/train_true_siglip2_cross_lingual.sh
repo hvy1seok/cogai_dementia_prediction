@@ -107,7 +107,7 @@ echo "  학습률: $LEARNING_RATE"
 echo "  에포크 수: $NUM_EPOCHS"
 echo "  옵티마이저: $OPTIMIZER_TYPE (rho=$SAM_RHO)"
 echo "  손실 함수: $LOSS_TYPE + Multi-Loss"
-echo "  Early Stopping: Validation AUC 기준 15 epochs patience"
+echo "  Early Stopping: 훈련 언어 평균 AUC 기준 15 epochs patience"
 echo ""
 echo "🎯 진정한 SigLIP2 Zero-shot Multi-Loss (Cross-lingual 특화):"
 echo "  🧑‍🏫 EMA Teacher-Student: momentum=$EMA_MOMENTUM"
@@ -115,6 +115,10 @@ echo "  📚 SILC/TIPS Loss: ${SILC_WEIGHT} (Self-Distillation 강화)"
 echo "  🔗 Sigmoid Loss: ${SIGMOID_WEIGHT} (Cross-Modal Contrastive 강화)"
 echo "  📝 LoCa Loss: ${LOCA_WEIGHT} (Caption Generation)"
 echo "  🎯 Classification Loss: ${CLASSIFICATION_WEIGHT} (Dementia Diagnosis)"
+echo ""
+echo "📊 베스트 모델 선택 기준:"
+echo "  🎯 훈련 언어들(${TRAIN_LANGUAGES[*]}) Validation AUC 평균"
+echo "  📈 언어 편향 방지를 위한 균형잡힌 평가"
 echo ""
 echo "🚀 Zero-shot Cross-lingual 특화 전략:"
 echo "  ✅ Gemma 토크나이저로 다국어 표현 능력 극대화 (256K vocab)"
@@ -165,7 +169,9 @@ $PYTHON_CMD true_siglip2_trainer.py \
     --silc_weight $SILC_WEIGHT \
     --sigmoid_weight $SIGMOID_WEIGHT \
     --loca_weight $LOCA_WEIGHT \
-    --classification_weight $CLASSIFICATION_WEIGHT
+    --classification_weight $CLASSIFICATION_WEIGHT \
+    --best_model_metric "avg_lang_auc" \
+    --target_languages "${TRAIN_LANGUAGES[@]}"
 
 # 결과 확인
 if [ $? -eq 0 ]; then
