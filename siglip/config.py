@@ -70,9 +70,21 @@ class SigLIPConfig:
     # 언어 설정 (언어 무관 학습을 위해)
     languages: List[str] = None
     
+    # 베스트 모델 선택 기준 설정
+    best_model_metric: str = "val_auc"    # "val_auc" 또는 "avg_lang_auc"
+    target_languages: List[str] = None    # avg_lang_auc 모드에서 평균을 계산할 타겟 언어들
+    
+    # Cross-lingual 설정
+    cross_lingual_mode: bool = False
+    train_languages: List[str] = None
+    test_languages: List[str] = None
+    
     def __post_init__(self):
         if self.languages is None:
             self.languages = ["English", "Greek", "Spanish", "Mandarin"]
+        
+        if self.target_languages is None:
+            self.target_languages = ["English", "Spanish", "Mandarin"]
         
         # 디렉토리 생성
         os.makedirs(self.output_dir, exist_ok=True)
@@ -89,7 +101,7 @@ class TrainingConfig:
     save_total_limit: int = 3
     
     # 조기 종료 설정
-    early_stopping_patience: int = 15
+    early_stopping_patience: int = 10  # 10 에폭으로 변경
     early_stopping_threshold: float = 0.001
     
     # 혼합 정밀도 훈련

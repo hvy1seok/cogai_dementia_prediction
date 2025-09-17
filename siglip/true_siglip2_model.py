@@ -843,10 +843,62 @@ class TrueSigLIP2DementiaClassifier(pl.LightningModule):
             labels = all_labels.cpu().numpy()
             auc = roc_auc_score(labels, probs)
             self.log('val_auc', auc)
-        except:
+            
+            # 언어별 AUC 계산 및 평균 계산
+            lang_aucs = self._compute_language_aucs(probs, labels, all_languages)
+            for lang, lang_auc in lang_aucs.items():
+                self.log(f'val_{lang}_auc', lang_auc)
+            
+            # 베스트 모델 선택 기준에 따른 메트릭 계산
+            if hasattr(self.config, 'best_model_metric') and self.config.best_model_metric == "avg_lang_auc":
+                avg_lang_auc = self._compute_target_languages_avg_auc(lang_aucs, self.config.target_languages)
+                self.log('val_avg_lang_auc', avg_lang_auc)
+                print(f"📊 타겟 언어별 평균 AUC: {avg_lang_auc:.4f}")
+            
+        except Exception as e:
+            print(f"⚠️ AUC 계산 실패: {e}")
             self.log('val_auc', 0.0)
         
         self.validation_step_outputs.clear()
+    
+    def _compute_language_aucs(self, probs, labels, languages):
+        """언어별 AUC 계산"""
+        lang_aucs = {}
+        unique_languages = list(set(languages))
+        
+        for lang in unique_languages:
+            lang_indices = [i for i, l in enumerate(languages) if l == lang]
+            if len(lang_indices) > 0:
+                lang_probs = probs[lang_indices]
+                lang_labels = labels[lang_indices]
+                
+                # 해당 언어에 양/음성 클래스가 모두 있는지 확인
+                if len(set(lang_labels)) > 1:
+                    try:
+                        from sklearn.metrics import roc_auc_score
+                        lang_auc = roc_auc_score(lang_labels, lang_probs)
+                        lang_aucs[lang] = lang_auc
+                    except:
+                        lang_aucs[lang] = 0.0
+        
+        return lang_aucs
+    
+    def _compute_target_languages_avg_auc(self, lang_aucs, target_languages):
+        """타겟 언어들의 평균 AUC 계산"""
+        valid_aucs = []
+        
+        for lang in target_languages:
+            if lang in lang_aucs and lang_aucs[lang] > 0:
+                valid_aucs.append(lang_aucs[lang])
+                print(f"  {lang} AUC: {lang_aucs[lang]:.4f}")
+        
+        if valid_aucs:
+            avg_auc = np.mean(valid_aucs)
+            print(f"  평균 AUC ({len(valid_aucs)}개 언어): {avg_auc:.4f}")
+            return avg_auc
+        else:
+            print("  ⚠️ 유효한 언어별 AUC가 없어 전체 AUC 사용")
+            return 0.0
     
     def _compute_test_metrics(self):
         """테스트 메트릭 계산"""

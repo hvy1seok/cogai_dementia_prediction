@@ -64,22 +64,7 @@ case $EXPERIMENT_NUM in
 esac
 
 # 출력 디렉토리 설정
-OUTPUT_DIR="../modules/outputs/siglip-sam/True_SigLIP2_CrossLingual_${EXPERIMENT_NAME}"
-
-# SAM + Focal Loss 설정
-OPTIMIZER_TYPE="sam"
-SAM_RHO=0.05
-LOSS_TYPE="focal"
-FOCAL_ALPHA=1.0
-FOCAL_GAMMA=2.0
-AUTO_CLASS_WEIGHTS="--auto_class_weights"
-
-# True SigLIP2 Multi-Loss 가중치 (Cross-lingual 특화)
-EMA_MOMENTUM=0.999
-SILC_WEIGHT=0.3      # Self-Distillation 비중 증가 (30%)
-SIGMOID_WEIGHT=1.2   # Contrastive 비중 증가 (120%)
-LOCA_WEIGHT=0.8      # Caption 비중 조정 (80%)
-CLASSIFICATION_WEIGHT=1.0  # Classification 유지 (100%)
+OUTPUT_DIR="../modules/outputs/siglip/True_SigLIP2_CrossLingual_${EXPERIMENT_NAME}"
 
 # 출력 디렉토리 생성
 mkdir -p "$OUTPUT_DIR"
@@ -96,12 +81,23 @@ echo "  모델: $MODEL_NAME"
 echo "  배치 크기: $BATCH_SIZE"
 echo "  학습률: $LEARNING_RATE"
 echo "  에포크 수: $NUM_EPOCHS"
-echo "  옵티마이저: $OPTIMIZER_TYPE (rho=$SAM_RHO)"
-echo "  손실 함수: $LOSS_TYPE + Multi-Loss"
-echo "  Early Stopping: 평균 AUC 기준 10 epochs patience"
 echo ""
-echo "🎯 진정한 SigLIP2 Multi-Loss (Cross-lingual 특화):"
-echo "  🧑‍🏫 EMA Teacher-Student: momentum=$EMA_MOMENTUM"
+
+# True SigLIP2 Multi-Loss 설정 (Cross-lingual 특화)
+EMA_MOMENTUM=0.999
+SILC_WEIGHT=0.3      # Self-Distillation 강화 (30%)
+SIGMOID_WEIGHT=1.2   # Contrastive 강화 (120%)
+LOCA_WEIGHT=0.8      # Caption 조정 (80%)
+CLASSIFICATION_WEIGHT=1.0  # 유지 (100%)
+MASK_RATIO=0.15
+DECODER_HIDDEN_DIM=512
+DECODER_NUM_HEADS=8
+DECODER_NUM_LAYERS=6
+VOCAB_SIZE=30522
+MAX_CAPTION_LENGTH=77
+
+echo "🔥 진정한 SigLIP2 Multi-Loss 구조 (Cross-lingual 특화):"
+echo "  🧑‍🏫 EMA Teacher Momentum: ${EMA_MOMENTUM}"
 echo "  📚 SILC/TIPS Loss: ${SILC_WEIGHT} (Self-Distillation 강화)"
 echo "  🔗 Sigmoid Loss: ${SIGMOID_WEIGHT} (Cross-Modal Contrastive 강화)"
 echo "  📝 LoCa Loss: ${LOCA_WEIGHT} (Caption Generation)"
@@ -132,53 +128,42 @@ fi
 echo "Python 명령어: $PYTHON_CMD"
 echo ""
 
-echo "🚀 진정한 SigLIP2 Zero-shot Cross-Lingual 모델 훈련 시작..."
-echo "Zero-shot 실험: ${TRAIN_LANGUAGES[*]} → ${TEST_LANGUAGES[*]}"
-echo "⚡ 타겟 언어는 훈련 시 전혀 사용하지 않음 (완전 Zero-shot)"
-echo "⚡ EMA Teacher-Student + Multi-Loss로 최강 Zero-shot 성능 달성"
-echo "================================"
-
 # 훈련 실행
+echo "🚀 진정한 SigLIP2 - Zero-shot Cross-Lingual 모델 훈련 시작..."
+echo "⏳ Early Stopping: 평균 AUC 기준 10 epochs patience"
+echo ""
+
 $PYTHON_CMD true_siglip2_trainer.py \
     --data_dir "$DATA_DIR" \
-    --output_dir "../modules/outputs/siglip-sam" \
+    --output_dir "$OUTPUT_DIR" \
     --model_name "$MODEL_NAME" \
     --batch_size $BATCH_SIZE \
     --learning_rate $LEARNING_RATE \
     --num_epochs $NUM_EPOCHS \
-    --parser cross_lingual \
+    --parser "cross_lingual" \
     --train_languages "${TRAIN_LANGUAGES[@]}" \
     --test_languages "${TEST_LANGUAGES[@]}" \
-    --optimizer_type "$OPTIMIZER_TYPE" \
-    --sam_rho $SAM_RHO \
-    --loss_type "$LOSS_TYPE" \
-    --focal_alpha $FOCAL_ALPHA \
-    --focal_gamma $FOCAL_GAMMA \
-    $AUTO_CLASS_WEIGHTS \
+    --loss_type "cross_entropy" \
+    --optimizer_type "adamw" \
     --ema_momentum $EMA_MOMENTUM \
     --silc_weight $SILC_WEIGHT \
     --sigmoid_weight $SIGMOID_WEIGHT \
     --loca_weight $LOCA_WEIGHT \
     --classification_weight $CLASSIFICATION_WEIGHT \
+    --mask_ratio $MASK_RATIO \
+    --decoder_hidden_dim $DECODER_HIDDEN_DIM \
+    --decoder_num_heads $DECODER_NUM_HEADS \
+    --decoder_num_layers $DECODER_NUM_LAYERS \
+    --vocab_size $VOCAB_SIZE \
+    --max_caption_length $MAX_CAPTION_LENGTH \
     --best_model_metric "avg_lang_auc" \
     --target_languages "${TRAIN_LANGUAGES[@]}"
 
 # 결과 확인
 if [ $? -eq 0 ]; then
     echo ""
-    echo "✅ 진정한 SigLIP2 Zero-shot Cross-Lingual 모델 훈련 완료!"
+    echo "🎉 진정한 SigLIP2 - Zero-shot Cross-Lingual 모델 훈련 성공!"
     echo "완료 시간: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "모델 저장 위치: $OUTPUT_DIR/checkpoints"
-    echo ""
-    echo "🌍 실험: $EXPERIMENT_NAME"
-    echo "🎯 훈련 언어 (소스): ${TRAIN_LANGUAGES[*]}"
-    echo "🎯 타겟 언어 (Zero-shot): ${TEST_LANGUAGES[*]}"
-    echo ""
-    echo "🔥 진정한 SigLIP2 Zero-shot 효과:"
-    echo "   ✅ EMA Teacher-Student로 안정적 Zero-shot 전이"
-    echo "   ✅ Enhanced Self-Distillation으로 일반화 능력 극대화"
-    echo "   ✅ Strengthened Contrastive Learning으로 Cross-modal alignment 향상"
-    echo "   ✅ Multi-Loss 통합으로 Robust representation 학습"
     echo ""
     echo "📊 이 모델은 ${TRAIN_LANGUAGES[*]} 데이터로만 훈련되어"
     echo "   ${TEST_LANGUAGES[*]} 데이터에서 완전 Zero-shot 성능을 평가합니다."

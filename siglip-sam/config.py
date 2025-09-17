@@ -29,7 +29,7 @@ class SigLIPSAMConfig:
     num_epochs: int = 100
     warmup_steps: int = 100
     weight_decay: float = 0.01
-    early_stopping_patience: int = 15  # Validation AUC 기준 Early Stopping
+    early_stopping_patience: int = 10  # Validation AUC 기준 Early Stopping (10 에폭)
     
     # 손실 함수 설정
     loss_type: str = "focal"  # "cross_entropy", "focal", "bce"
@@ -86,6 +86,10 @@ class SigLIPSAMConfig:
     vocab_size: int = 30522               # Vocabulary size
     max_caption_length: int = 77          # Maximum caption length
     
+    # 베스트 모델 선택 기준 설정
+    best_model_metric: str = "val_auc"    # "val_auc" 또는 "avg_lang_auc"
+    target_languages: List[str] = None    # avg_lang_auc 모드에서 평균을 계산할 타겟 언어들
+    
     # 로깅 설정
     log_interval: int = 10
     save_interval: int = 5  # 에포크마다 저장
@@ -93,6 +97,9 @@ class SigLIPSAMConfig:
     def __post_init__(self):
         if self.languages is None:
             self.languages = ["English", "Greek", "Spanish", "Mandarin"]
+        
+        if self.target_languages is None:
+            self.target_languages = ["English", "Spanish", "Mandarin"]
         
         # 디렉토리 생성
         os.makedirs(self.output_dir, exist_ok=True)

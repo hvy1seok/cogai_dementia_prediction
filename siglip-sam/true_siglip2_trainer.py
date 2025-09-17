@@ -147,6 +147,24 @@ def compute_metrics(predictions, labels, languages=None):
             'optimal_threshold': 0.5
         }
 
+def compute_target_languages_avg_auc(metrics: dict, target_languages: List[str]) -> float:
+    """타겟 언어들의 평균 AUC 계산"""
+    valid_aucs = []
+    
+    for lang in target_languages:
+        lang_key = f"{lang}_auc"
+        if lang_key in metrics and metrics[lang_key] > 0:
+            valid_aucs.append(metrics[lang_key])
+            print(f"  {lang} AUC: {metrics[lang_key]:.4f}")
+    
+    if valid_aucs:
+        avg_auc = np.mean(valid_aucs)
+        print(f"  평균 AUC ({len(valid_aucs)}개 언어): {avg_auc:.4f}")
+        return avg_auc
+    else:
+        print("  ⚠️ 유효한 언어별 AUC가 없어 전체 AUC 사용")
+        return metrics.get('auc', 0.0)
+
 def train_epoch(model, train_loader, optimizer, config, scaler=None, use_mixed_precision=False):
     """한 에포크 훈련 - True SigLIP2 Multi-Loss"""
     model.train()
@@ -519,20 +537,29 @@ def train_model(config: SigLIPSAMConfig):
         print(f"훈련 - Loss: {train_loss:.4f}, Acc: {train_metrics['accuracy']:.4f}, AUC: {train_metrics['auc']:.4f}")
         print(f"검증 - Loss: {val_loss:.4f}, Acc: {val_metrics['accuracy']:.4f}, AUC: {val_metrics['auc']:.4f}")
         
+        # 베스트 모델 선택 기준에 따른 메트릭 계산
+        if config.best_model_metric == "avg_lang_auc":
+            print(f"📊 타겟 언어별 AUC 계산 중: {config.target_languages}")
+            current_metric = compute_target_languages_avg_auc(val_metrics, config.target_languages)
+            metric_name = "평균 AUC"
+        else:
+            current_metric = val_metrics['auc']
+            metric_name = "전체 AUC"
+        
         # 베스트 모델 저장 및 Early Stopping
-        if val_metrics['auc'] > best_val_auc:
-            best_val_auc = val_metrics['auc']
+        if current_metric > best_val_auc:
+            best_val_auc = current_metric
             best_model_path = save_checkpoint(model, optimizer, epoch + 1, val_metrics, config, is_best=True)
             epochs_without_improvement = 0
-            print(f"🏆 새로운 베스트 모델! Validation AUC: {best_val_auc:.4f}")
+            print(f"🏆 새로운 베스트 모델! {metric_name}: {best_val_auc:.4f}")
         else:
             epochs_without_improvement += 1
             print(f"⏳ 개선 없음: {epochs_without_improvement}/{early_stopping_patience} epochs")
         
         # Early Stopping 체크
         if epochs_without_improvement >= early_stopping_patience:
-            print(f"\n🛑 Early Stopping! {early_stopping_patience} epochs 동안 validation AUC 개선 없음")
-            print(f"🏆 최종 베스트 Validation AUC: {best_val_auc:.4f}")
+            print(f"\n🛑 Early Stopping! {early_stopping_patience} epochs 동안 {metric_name} 개선 없음")
+            print(f"🏆 최종 베스트 {metric_name}: {best_val_auc:.4f}")
             break
         
         # 정기 체크포인트 저장
@@ -540,7 +567,7 @@ def train_model(config: SigLIPSAMConfig):
             save_checkpoint(model, optimizer, epoch + 1, val_metrics, config, is_best=False)
     
     print(f"\n=== 진정한 SigLIP2 훈련 완료 ===")
-    print(f"🏆 베스트 Validation AUC: {best_val_auc:.4f}")
+    print(f"🏆 베스트 {metric_name}: {best_val_auc:.4f}")
     print(f"💾 베스트 모델: {best_model_path}")
     
     # 훈련 완료 후 최종 테스트 평가
@@ -629,6 +656,13 @@ def main():
     parser.add_argument("--loca_weight", type=float, default=1.0, help="LoCa Loss 가중치")
     parser.add_argument("--classification_weight", type=float, default=1.0, help="Classification Loss 가중치")
     
+    # 베스트 모델 선택 기준 옵션
+    parser.add_argument("--best_model_metric", type=str, default="val_auc", 
+                       choices=["val_auc", "avg_lang_auc"],
+                       help="베스트 모델 선택 기준 (val_auc: 전체 AUC, avg_lang_auc: 언어별 평균 AUC)")
+    parser.add_argument("--target_languages", nargs="+", default=["English", "Spanish", "Mandarin"],
+                       help="avg_lang_auc 모드에서 평균을 계산할 타겟 언어들")
+    
     args = parser.parse_args()
     
     # 설정 생성
@@ -671,6 +705,10 @@ def main():
     config.sigmoid_weight = args.sigmoid_weight
     config.loca_weight = args.loca_weight
     config.classification_weight = args.classification_weight
+    
+    # 베스트 모델 선택 기준 설정
+    config.best_model_metric = args.best_model_metric
+    config.target_languages = args.target_languages
     
     # 언어 파서 설정 (기존 trainer.py와 동일)
     if args.parser == "cross_lingual":

@@ -66,15 +66,25 @@ def setup_wandb_logger(config: SigLIPConfig, training_config: TrainingConfig):
     
     return wandb_logger
 
-def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
+def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str, config: SigLIPConfig):
     """콜백 생성 - True SigLIP2 전용"""
     callbacks = []
+    
+    # 베스트 모델 선택 기준에 따른 모니터링 메트릭 결정
+    if hasattr(config, 'best_model_metric') and config.best_model_metric == "avg_lang_auc":
+        monitor_metric = 'val_avg_lang_auc'
+        filename_template = 'true-siglip2-{epoch:02d}-{val_avg_lang_auc:.3f}'
+        print(f"📊 베스트 모델 선택 기준: 언어별 평균 AUC ({config.target_languages})")
+    else:
+        monitor_metric = 'val_auc'
+        filename_template = 'true-siglip2-{epoch:02d}-{val_auc:.3f}'
+        print(f"📊 베스트 모델 선택 기준: 전체 AUC")
     
     # 모델 체크포인트 콜백
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_dir,
-        filename='true-siglip2-{epoch:02d}-{val_auc:.3f}',
-        monitor='val_auc',
+        filename=filename_template,
+        monitor=monitor_metric,
         mode='max',
         save_top_k=3,
         save_last=True,
@@ -84,13 +94,15 @@ def create_callbacks(training_config: TrainingConfig, checkpoint_dir: str):
     
     # Early Stopping 콜백
     early_stopping = EarlyStopping(
-        monitor='val_auc',
+        monitor=monitor_metric,
         mode='max',
         patience=training_config.early_stopping_patience,
         verbose=True,
         min_delta=training_config.early_stopping_threshold
     )
     callbacks.append(early_stopping)
+    
+    print(f"⏳ Early Stopping: {monitor_metric} 기준 {training_config.early_stopping_patience} epochs patience")
     
     return callbacks
 
@@ -139,7 +151,7 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     wandb_logger = setup_wandb_logger(config, training_config)
     
     # 콜백 설정
-    callbacks = create_callbacks(training_config, config.checkpoint_dir)
+    callbacks = create_callbacks(training_config, config.checkpoint_dir, config)
     
     # 트레이너 설정
     trainer = pl.Trainer(
@@ -212,6 +224,19 @@ def main():
     parser.add_argument("--loca_weight", type=float, default=1.0, help="LoCa Loss 가중치")
     parser.add_argument("--classification_weight", type=float, default=1.0, help="Classification Loss 가중치")
     
+    # 베스트 모델 선택 기준 옵션
+    parser.add_argument("--best_model_metric", type=str, default="val_auc", 
+                       choices=["val_auc", "avg_lang_auc"],
+                       help="베스트 모델 선택 기준 (val_auc: 전체 AUC, avg_lang_auc: 언어별 평균 AUC)")
+    parser.add_argument("--target_languages", nargs="+", default=["English", "Spanish", "Mandarin"],
+                       help="avg_lang_auc 모드에서 평균을 계산할 타겟 언어들")
+    
+    # Cross-lingual 모드 옵션
+    parser.add_argument("--train_languages", nargs="+", default=["English", "Spanish", "Mandarin"],
+                       help="Cross-lingual 모드에서 훈련에 사용할 언어들")
+    parser.add_argument("--test_languages", nargs="+", default=["Greek"],
+                       help="Cross-lingual 모드에서 테스트에 사용할 언어들")
+    
     args = parser.parse_args()
     
     # 설정 생성
@@ -252,6 +277,19 @@ def main():
     config.sigmoid_weight = args.sigmoid_weight
     config.loca_weight = args.loca_weight
     config.classification_weight = args.classification_weight
+    
+    # 베스트 모델 선택 기준 설정
+    config.best_model_metric = args.best_model_metric
+    config.target_languages = args.target_languages
+    
+    # Cross-lingual 설정
+    if args.parser == "cross_lingual":
+        config.cross_lingual_mode = True
+        config.train_languages = args.train_languages
+        config.test_languages = args.test_languages
+        config.languages = args.train_languages + args.test_languages
+    else:
+        config.cross_lingual_mode = False
     
     # 언어 파서 설정
     if args.parser == "all":
