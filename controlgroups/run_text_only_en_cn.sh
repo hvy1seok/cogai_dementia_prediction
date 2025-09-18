@@ -84,6 +84,9 @@ echo "================================"
 # controlgroups 디렉토리로 이동하여 실행 (import 오류 방지)
 cd "$(dirname "$0")"
 
+# Python path 설정 (현재 디렉토리를 Python path에 추가)
+export PYTHONPATH="$(pwd):$PYTHONPATH"
+
 # 훈련 실행
 $PYTHON_CMD train_text_only.py \
     --data_dir "$DATA_DIR" \

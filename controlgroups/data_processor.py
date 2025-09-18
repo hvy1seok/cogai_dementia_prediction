@@ -18,6 +18,9 @@ import pandas as pd
 from collections import defaultdict, Counter
 
 from config import ControlGroupConfig
+import sys
+sys.path.append('../siglip')
+from language_parsers import parse_all_languages
 
 class ControlGroupDataset(Dataset):
     """대조군 모델을 위한 데이터셋"""
@@ -100,41 +103,43 @@ class ControlGroupDataset(Dataset):
 def load_multilingual_data(data_dir: str, languages: List[str]) -> List[Dict]:
     """멀티링궐 데이터 로드"""
     
-    print(f"📂 다국어 데이터 로드 중: {languages}")
-    all_data = []
+    print(f"📂 siglip 파서를 사용하여 다국어 데이터 로드 중: {languages}")
     
-    for language in languages:
-        lang_dir = os.path.join(data_dir, language)
-        if not os.path.exists(lang_dir):
-            print(f"⚠️ 언어 디렉토리 없음: {lang_dir}")
-            continue
-        
-        print(f"  📁 {language} 데이터 로드 중...")
-        lang_data = load_language_data(lang_dir, language)
-        all_data.extend(lang_data)
-        print(f"    ✅ {len(lang_data)}개 샘플 로드됨")
+    # siglip/language_parsers.py의 parse_all_languages 함수 사용
+    data = parse_all_languages(data_dir, languages)
     
-    print(f"📊 전체 로드된 데이터: {len(all_data)}개 샘플")
+    # 대조군 모델 호환성을 위해 필드 추가
+    for item in data:
+        if 'audio_path' in item and 'spectrogram_path' not in item:
+            item['spectrogram_path'] = item['audio_path']
+        if 'spectrogram_path' in item and 'audio_available' not in item:
+            item['audio_available'] = os.path.exists(item['spectrogram_path']) if item['spectrogram_path'] else False
+    
+    print(f"📊 전체 로드된 데이터: {len(data)}개 샘플")
     
     # 언어별 분포
-    lang_counts = Counter([item['language'] for item in all_data])
+    lang_counts = Counter([item['language'] for item in data])
     print("📈 언어별 분포:")
     for lang, count in lang_counts.items():
         print(f"  {lang}: {count}개")
     
     # 라벨별 분포
-    label_counts = Counter([item['label'] for item in all_data])
+    label_counts = Counter([item['label'] for item in data])
     print("📈 라벨별 분포:")
     for label, count in label_counts.items():
         label_name = "정상" if label == 0 else "치매"
         print(f"  {label_name}: {count}개")
     
-    return all_data
+    return data
 
 def load_language_data(lang_dir: str, language: str) -> List[Dict]:
     """특정 언어 데이터 로드"""
     
     data = []
+    
+    # 영어는 특별한 구조를 가짐
+    if language == "English":
+        return load_english_data(lang_dir, language)
     
     # 텍스트 데이터 경로
     text_dir = os.path.join(lang_dir, 'textdata')
@@ -350,6 +355,8 @@ def create_sample_based_split(
     print(f"  테스트: {len(test_indices)}개 샘플")
     
     return train_indices, val_indices, test_indices
+
+# 더 이상 필요 없음 - siglip의 language_parsers.py 사용
 
 def compute_class_weights(dataset: Union[List[Dict], Subset], config: ControlGroupConfig) -> np.ndarray:
     """클래스 가중치 계산"""
