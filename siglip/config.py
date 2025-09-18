@@ -73,8 +73,8 @@ class SigLIPConfig:
     languages: List[str] = None
     
     # 베스트 모델 선택 기준 설정
-    best_model_metric: str = "val_auc"    # "val_auc" 또는 "avg_lang_auc"
-    target_languages: List[str] = None    # avg_lang_auc 모드에서 평균을 계산할 타겟 언어들
+    best_model_metric: str = "val_macro_f1"    # "val_auc", "val_macro_f1", "avg_lang_macro_f1"
+    target_languages: List[str] = None    # avg_lang_macro_f1 모드에서 평균을 계산할 타겟 언어들
     
     # Cross-lingual 설정
     cross_lingual_mode: bool = False

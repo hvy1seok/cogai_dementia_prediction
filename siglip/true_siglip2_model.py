@@ -849,11 +849,35 @@ class TrueSigLIP2DementiaClassifier(pl.LightningModule):
             for lang, lang_auc in lang_aucs.items():
                 self.log(f'val_{lang}_auc', lang_auc)
             
+            # 최적 threshold 계산
+            from sklearn.metrics import roc_curve
+            fpr, tpr, thresholds = roc_curve(labels, probs)
+            optimal_idx = np.argmax(tpr - fpr)
+            optimal_threshold = thresholds[optimal_idx]
+            
+            # Macro F1 계산
+            optimal_preds = (probs >= optimal_threshold).astype(int)
+            from sklearn.metrics import precision_recall_fscore_support
+            _, _, macro_f1, _ = precision_recall_fscore_support(
+                labels, optimal_preds, average='macro', zero_division=0
+            )
+            self.log('val_macro_f1', macro_f1)
+            
+            # 언어별 Macro F1 계산
+            lang_macro_f1s = self._compute_language_macro_f1s(probs, labels, all_languages, optimal_threshold)
+            for lang, lang_macro_f1 in lang_macro_f1s.items():
+                self.log(f'val_{lang}_macro_f1', lang_macro_f1)
+            
             # 베스트 모델 선택 기준에 따른 메트릭 계산
-            if hasattr(self.config, 'best_model_metric') and self.config.best_model_metric == "avg_lang_auc":
-                avg_lang_auc = self._compute_target_languages_avg_auc(lang_aucs, self.config.target_languages)
-                self.log('val_avg_lang_auc', avg_lang_auc)
-                print(f"📊 타겟 언어별 평균 AUC: {avg_lang_auc:.4f}")
+            if hasattr(self.config, 'best_model_metric'):
+                if self.config.best_model_metric == "avg_lang_auc":
+                    avg_lang_auc = self._compute_target_languages_avg_auc(lang_aucs, self.config.target_languages)
+                    self.log('val_avg_lang_auc', avg_lang_auc)
+                    print(f"📊 타겟 언어별 평균 AUC: {avg_lang_auc:.4f}")
+                elif self.config.best_model_metric == "avg_lang_macro_f1":
+                    avg_lang_macro_f1 = self._compute_target_languages_avg_macro_f1(lang_macro_f1s, self.config.target_languages)
+                    self.log('val_avg_lang_macro_f1', avg_lang_macro_f1)
+                    print(f"📊 타겟 언어별 평균 Macro F1: {avg_lang_macro_f1:.4f}")
             
         except Exception as e:
             print(f"⚠️ AUC 계산 실패: {e}")
@@ -898,6 +922,50 @@ class TrueSigLIP2DementiaClassifier(pl.LightningModule):
             return avg_auc
         else:
             print("  ⚠️ 유효한 언어별 AUC가 없어 전체 AUC 사용")
+            return 0.0
+    
+    def _compute_language_macro_f1s(self, probs, labels, languages, optimal_threshold):
+        """언어별 Macro F1 계산"""
+        lang_macro_f1s = {}
+        unique_languages = list(set(languages))
+        
+        for lang in unique_languages:
+            lang_indices = [i for i, l in enumerate(languages) if l == lang]
+            if len(lang_indices) > 0:
+                lang_probs = probs[lang_indices]
+                lang_labels = labels[lang_indices]
+                
+                # 최적 threshold로 예측
+                lang_preds = (lang_probs >= optimal_threshold).astype(int)
+                
+                # 해당 언어에 양/음성 클래스가 모두 있는지 확인
+                if len(set(lang_labels)) > 1:
+                    try:
+                        from sklearn.metrics import precision_recall_fscore_support
+                        _, _, lang_macro_f1, _ = precision_recall_fscore_support(
+                            lang_labels, lang_preds, average='macro', zero_division=0
+                        )
+                        lang_macro_f1s[lang] = lang_macro_f1
+                    except:
+                        lang_macro_f1s[lang] = 0.0
+        
+        return lang_macro_f1s
+    
+    def _compute_target_languages_avg_macro_f1(self, lang_macro_f1s, target_languages):
+        """타겟 언어들의 평균 Macro F1 계산"""
+        valid_macro_f1s = []
+        
+        for lang in target_languages:
+            if lang in lang_macro_f1s and lang_macro_f1s[lang] > 0:
+                valid_macro_f1s.append(lang_macro_f1s[lang])
+                print(f"  {lang} Macro F1: {lang_macro_f1s[lang]:.4f}")
+        
+        if valid_macro_f1s:
+            avg_macro_f1 = np.mean(valid_macro_f1s)
+            print(f"  평균 Macro F1 ({len(valid_macro_f1s)}개 언어): {avg_macro_f1:.4f}")
+            return avg_macro_f1
+        else:
+            print("  ⚠️ 유효한 언어별 Macro F1가 없어 전체 Macro F1 사용")
             return 0.0
     
     def _compute_test_metrics(self):

@@ -217,7 +217,14 @@ def compute_language_specific_metrics(y_scores, y_true, all_languages, optimal_t
         lang_optimal_acc = accuracy_score(lang_labels, lang_optimal_preds)
         lang_default_acc = accuracy_score(lang_labels, lang_default_preds)
         
+        # Macro F1 계산 (클래스 균형 고려)
         lang_precision, lang_recall, lang_f1, _ = precision_recall_fscore_support(
+            lang_labels, lang_optimal_preds, average='macro', zero_division=0
+        )
+        lang_macro_f1 = lang_f1
+        
+        # Weighted F1도 계산 (기존 호환성)
+        _, _, lang_weighted_f1, _ = precision_recall_fscore_support(
             lang_labels, lang_optimal_preds, average='weighted', zero_division=0
         )
         
@@ -234,7 +241,8 @@ def compute_language_specific_metrics(y_scores, y_true, all_languages, optimal_t
         print(f"   Accuracy (0.5): {lang_default_acc:.4f}")
         print(f"   Precision: {lang_precision:.4f}")
         print(f"   Recall: {lang_recall:.4f}")
-        print(f"   F1: {lang_f1:.4f}")
+        print(f"   Macro F1: {lang_macro_f1:.4f}")
+        print(f"   Weighted F1: {lang_weighted_f1:.4f}")
         
         # wandb 로깅용 메트릭 저장
         language_metrics[f'{lang}_auc'] = lang_auc
@@ -242,7 +250,9 @@ def compute_language_specific_metrics(y_scores, y_true, all_languages, optimal_t
         language_metrics[f'{lang}_accuracy_default'] = lang_default_acc
         language_metrics[f'{lang}_precision'] = lang_precision
         language_metrics[f'{lang}_recall'] = lang_recall
-        language_metrics[f'{lang}_f1'] = lang_f1
+        language_metrics[f'{lang}_f1'] = lang_macro_f1  # Macro F1 저장
+        language_metrics[f'{lang}_macro_f1'] = lang_macro_f1
+        language_metrics[f'{lang}_weighted_f1'] = lang_weighted_f1
         language_metrics[f'{lang}_sample_count'] = len(lang_scores)
         language_metrics[f'{lang}_normal_count'] = normal_count
         language_metrics[f'{lang}_dementia_count'] = dementia_count

@@ -105,26 +105,37 @@ def compute_metrics(predictions, labels, languages=None):
         argmax_preds = np.argmax(predictions, axis=1)
         
         optimal_accuracy = accuracy_score(labels, optimal_preds)
+        # Macro F1 계산 (클래스 균형 고려)
         optimal_precision, optimal_recall, optimal_f1, _ = precision_recall_fscore_support(
+            labels, optimal_preds, average='macro', zero_division=0
+        )
+        optimal_macro_f1 = optimal_f1  # Macro F1 명시적 저장
+        
+        # Weighted F1도 계산 (기존 호환성)
+        _, _, optimal_weighted_f1, _ = precision_recall_fscore_support(
             labels, optimal_preds, average='weighted', zero_division=0
         )
         
         default_accuracy = accuracy_score(labels, default_preds)
         default_precision, default_recall, default_f1, _ = precision_recall_fscore_support(
-            labels, default_preds, average='weighted', zero_division=0
+            labels, default_preds, average='macro', zero_division=0
         )
+        default_macro_f1 = default_f1
         
         metrics = {
             'accuracy': optimal_accuracy,
             'precision': optimal_precision,
             'recall': optimal_recall,
             'f1': optimal_f1,
+            'macro_f1': optimal_macro_f1,  # Macro F1 추가
+            'weighted_f1': optimal_weighted_f1,  # Weighted F1
             'auc': auc,
             'optimal_threshold': optimal_threshold,
             'accuracy_default': default_accuracy,
             'precision_default': default_precision,
             'recall_default': default_recall,
             'f1_default': default_f1,
+            'macro_f1_default': default_macro_f1,  # Default Macro F1
         }
         
         if languages is not None:
@@ -164,6 +175,24 @@ def compute_target_languages_avg_auc(metrics: dict, target_languages: List[str])
     else:
         print("  ⚠️ 유효한 언어별 AUC가 없어 전체 AUC 사용")
         return metrics.get('auc', 0.0)
+
+def compute_target_languages_avg_macro_f1(metrics: dict, target_languages: List[str]) -> float:
+    """타겟 언어들의 평균 Macro F1 계산"""
+    valid_macro_f1s = []
+    
+    for lang in target_languages:
+        lang_key = f"{lang}_f1"  # 언어별 F1 (이미 Macro F1으로 계산됨)
+        if lang_key in metrics and metrics[lang_key] > 0:
+            valid_macro_f1s.append(metrics[lang_key])
+            print(f"  {lang} Macro F1: {metrics[lang_key]:.4f}")
+    
+    if valid_macro_f1s:
+        avg_macro_f1 = np.mean(valid_macro_f1s)
+        print(f"  평균 Macro F1 ({len(valid_macro_f1s)}개 언어): {avg_macro_f1:.4f}")
+        return avg_macro_f1
+    else:
+        print("  ⚠️ 유효한 언어별 Macro F1가 없어 전체 Macro F1 사용")
+        return metrics.get('macro_f1', 0.0)
 
 def train_epoch(model, train_loader, optimizer, config, scaler=None, use_mixed_precision=False):
     """한 에포크 훈련 - True SigLIP2 Multi-Loss"""
@@ -540,14 +569,21 @@ def train_model(config: SigLIPSAMConfig):
         wandb.log(wandb_log)
         
         # 결과 출력 (훈련 중에는 train/val만)
-        print(f"훈련 - Loss: {train_loss:.4f}, Acc: {train_metrics['accuracy']:.4f}, AUC: {train_metrics['auc']:.4f}")
-        print(f"검증 - Loss: {val_loss:.4f}, Acc: {val_metrics['accuracy']:.4f}, AUC: {val_metrics['auc']:.4f}")
+        print(f"훈련 - Loss: {train_loss:.4f}, Acc: {train_metrics['accuracy']:.4f}, AUC: {train_metrics['auc']:.4f}, Macro F1: {train_metrics['macro_f1']:.4f}")
+        print(f"검증 - Loss: {val_loss:.4f}, Acc: {val_metrics['accuracy']:.4f}, AUC: {val_metrics['auc']:.4f}, Macro F1: {val_metrics['macro_f1']:.4f}")
         
         # 베스트 모델 선택 기준에 따른 메트릭 계산
         if config.best_model_metric == "avg_lang_auc":
             print(f"📊 타겟 언어별 AUC 계산 중: {config.target_languages}")
             current_metric = compute_target_languages_avg_auc(val_metrics, config.target_languages)
             metric_name = "평균 AUC"
+        elif config.best_model_metric == "val_macro_f1":
+            current_metric = val_metrics['macro_f1']
+            metric_name = "전체 Macro F1"
+        elif config.best_model_metric == "avg_lang_macro_f1":
+            print(f"📊 타겟 언어별 Macro F1 계산 중: {config.target_languages}")
+            current_metric = compute_target_languages_avg_macro_f1(val_metrics, config.target_languages)
+            metric_name = "평균 Macro F1"
         else:
             current_metric = val_metrics['auc']
             metric_name = "전체 AUC"
@@ -663,9 +699,9 @@ def main():
     parser.add_argument("--classification_weight", type=float, default=1.0, help="Classification Loss 가중치")
     
     # 베스트 모델 선택 기준 옵션
-    parser.add_argument("--best_model_metric", type=str, default="val_auc", 
-                       choices=["val_auc", "avg_lang_auc"],
-                       help="베스트 모델 선택 기준 (val_auc: 전체 AUC, avg_lang_auc: 언어별 평균 AUC)")
+    parser.add_argument("--best_model_metric", type=str, default="val_macro_f1", 
+                       choices=["val_auc", "val_macro_f1", "avg_lang_auc", "avg_lang_macro_f1"],
+                       help="베스트 모델 선택 기준 (val_macro_f1: 전체 Macro F1, avg_lang_macro_f1: 언어별 평균 Macro F1)")
     parser.add_argument("--target_languages", nargs="+", default=["English", "Spanish", "Mandarin"],
                        help="avg_lang_auc 모드에서 평균을 계산할 타겟 언어들")
     

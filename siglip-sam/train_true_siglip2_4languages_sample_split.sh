@@ -48,7 +48,7 @@ echo "  학습률: $LEARNING_RATE"
 echo "  에포크 수: $NUM_EPOCHS"
 echo "  옵티마이저: $OPTIMIZER_TYPE (rho=$SAM_RHO)"
 echo "  손실 함수: $LOSS_TYPE + Multi-Loss"
-echo "  Early Stopping: 전체 언어 평균 AUC 기준 15 epochs patience"
+echo "  Early Stopping: 전체 언어 평균 Macro F1 기준 15 epochs patience"
 echo ""
 echo "📊 데이터 분할 방식:"
 echo "  🔄 샘플(파일) 단위 분할 - Speaker-Dependent"
@@ -56,8 +56,8 @@ echo "  📈 더 많은 학습 데이터 확보 가능"
 echo "  ⚠️  동일 환자의 샘플이 train/val/test에 분산될 수 있음"
 echo ""
 echo "📊 베스트 모델 선택 기준:"
-echo "  🎯 전체 언어들(English, Greek, Spanish, Mandarin) Validation AUC 평균"
-echo "  📈 언어 편향 방지를 위한 균형잡힌 평가"
+echo "  🎯 전체 언어들(English, Greek, Spanish, Mandarin) Validation Macro F1 평균"
+echo "  📈 언어 편향 방지를 위한 균형잡힌 평가 (클래스 균형 고려)"
 echo ""
 echo "🎯 진정한 SigLIP2 Multi-Loss 구조:"
 echo "  🧑‍🏫 EMA Teacher-Student: momentum=$EMA_MOMENTUM"
@@ -119,7 +119,7 @@ $PYTHON_CMD true_siglip2_trainer.py \
     --sigmoid_weight $SIGMOID_WEIGHT \
     --loca_weight $LOCA_WEIGHT \
     --classification_weight $CLASSIFICATION_WEIGHT \
-    --best_model_metric "avg_lang_auc" \
+    --best_model_metric "avg_lang_macro_f1" \
     --target_languages "English" "Greek" "Spanish" "Mandarin" \
     --split_by_patient false
 

@@ -118,7 +118,7 @@ $PYTHON_CMD true_siglip2_trainer.py \
     --sigmoid_weight $SIGMOID_WEIGHT \
     --loca_weight $LOCA_WEIGHT \
     --classification_weight $CLASSIFICATION_WEIGHT \
-    --best_model_metric "avg_lang_auc" \
+    --best_model_metric "avg_lang_macro_f1" \
     --target_languages "English" "Greek" "Spanish" "Mandarin" \
     --split_by_patient false
 
