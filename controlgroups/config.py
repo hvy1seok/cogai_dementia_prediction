@@ -76,7 +76,7 @@ class TextOnlyConfig(ControlGroupConfig):
     """Text-only (Gemma Encoder) 모델 설정"""
     
     # 텍스트 전용 설정
-    text_encoder: str = "google/gemma-2b"  # 또는 "xlm-roberta-base"
+    text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지
     text_feature_dim: int = 2048  # Gemma-2b의 실제 출력 차원
     use_cls_token: bool = True
     
@@ -99,7 +99,7 @@ class ConcatConfig(ControlGroupConfig):
     max_audio_length: int = 1024
     
     # 텍스트 인코더 설정
-    text_encoder: str = "google/gemma-2b"  # Gemma-2b로 변경
+    text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지
     text_feature_dim: int = 2048  # Gemma-2b의 실제 출력 차원
     use_cls_token: bool = True
     
