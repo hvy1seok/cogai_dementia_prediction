@@ -24,19 +24,19 @@ cd "$(dirname "$0")"
 # 모델별 실행
 case $MODEL_NUM in
     1)
-        echo "🎵 Audio-only (ViT-Spec) 모델 훈련 시작..."
+        echo "🎵 Audio-only (SigLIP Vision) 모델 훈련 시작..."
         echo "========================================"
-        bash run_audio_only_en_cn.sh
+        bash run_siglip_audio_only_en_cn.sh
         ;;
     2)
-        echo "📝 Text-only (Gemma Encoder) 모델 훈련 시작..."
+        echo "📝 Text-only (SigLIP2 Text) 모델 훈련 시작..."
         echo "========================================"
-        bash run_text_only_en_cn.sh
+        bash run_siglip_text_only_en_cn.sh
         ;;
     3)
-        echo "🔗 Concat (ViT + Gemma) Late Fusion 모델 훈련 시작..."
+        echo "🔗 Concat (SigLIP Vision + SigLIP2 Text) Late Fusion 모델 훈련 시작..."
         echo "========================================"
-        bash run_concat_en_cn.sh
+        bash run_siglip_concat_en_cn.sh
         ;;
     all)
         echo "🔄 모든 대조군 모델 순차 실행..."
@@ -44,9 +44,9 @@ case $MODEL_NUM in
         
         # 1. Audio-only 모델
         echo "========================================"
-        echo "🎵 1/3: Audio-only (ViT-Spec) 모델 훈련..."
+        echo "🎵 1/3: Audio-only (SigLIP Vision) 모델 훈련..."
         echo "========================================"
-        bash run_audio_only_en_cn.sh
+        bash run_siglip_audio_only_en_cn.sh
         if [ $? -ne 0 ]; then
             echo "❌ Audio-only 모델 훈련 실패"
             exit 1
@@ -55,9 +55,9 @@ case $MODEL_NUM in
         
         # 2. Text-only 모델
         echo "========================================"
-        echo "📝 2/3: Text-only (Gemma Encoder) 모델 훈련..."
+        echo "📝 2/3: Text-only (SigLIP2 Text) 모델 훈련..."
         echo "========================================"
-        bash run_text_only_en_cn.sh
+        bash run_siglip_text_only_en_cn.sh
         if [ $? -ne 0 ]; then
             echo "❌ Text-only 모델 훈련 실패"
             exit 1
@@ -66,9 +66,9 @@ case $MODEL_NUM in
         
         # 3. Concat 모델
         echo "========================================"
-        echo "🔗 3/3: Concat (ViT + Gemma) Late Fusion 모델 훈련..."
+        echo "🔗 3/3: Concat (SigLIP Vision + SigLIP2 Text) Late Fusion 모델 훈련..."
         echo "========================================"
-        bash run_concat_en_cn.sh
+        bash run_siglip_concat_en_cn.sh
         if [ $? -ne 0 ]; then
             echo "❌ Concat 모델 훈련 실패"
             exit 1
@@ -79,9 +79,9 @@ case $MODEL_NUM in
         echo "완료 시간: $(date '+%Y-%m-%d %H:%M:%S')"
         echo ""
         echo "📊 훈련 완료된 대조군 모델들:"
-        echo "   🎵 Audio-only (ViT-Spec): 스펙트로그램만으로 치매 진단"
-        echo "   📝 Text-only (Gemma): 전사 텍스트만으로 치매 진단"
-        echo "   🔗 Concat Late Fusion: ViT+Gemma Late Fusion"
+        echo "   🎵 Audio-only (SigLIP Vision): 스펙트로그램 → SigLIP 이미지 인코더"
+        echo "   📝 Text-only (SigLIP2 Text): 전사 텍스트 → SigLIP2 텍스트 인코더 (64 tokens)"
+        echo "   🔗 Concat Late Fusion: SigLIP Vision + SigLIP2 Text"
         echo ""
         echo "🎯 대조군 실험의 목적:"
         echo "   ✅ SigLIP2의 성능 우위성 검증"
