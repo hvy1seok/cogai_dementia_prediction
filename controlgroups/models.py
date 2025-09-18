@@ -190,9 +190,11 @@ class TextOnlyModel(nn.Module):
         self.text_encoder = AutoModel.from_pretrained(config.text_encoder)
         self.tokenizer = AutoTokenizer.from_pretrained(config.text_encoder)
         
-        # Gemma 2048 -> 768 projection (SigLIP과 동일한 차원으로 축소)
+        # Gemma의 실제 hidden_size -> 768 projection (SigLIP과 동일한 차원으로 축소)
         if "gemma" in config.text_encoder.lower():
-            self.text_projection = nn.Linear(2048, config.text_feature_dim)
+            gemma_hidden_size = self.text_encoder.config.hidden_size
+            print(f"  Gemma 실제 hidden_size: {gemma_hidden_size}")
+            self.text_projection = nn.Linear(gemma_hidden_size, config.text_feature_dim)
         else:
             self.text_projection = None
         
@@ -274,9 +276,11 @@ class ConcatModel(nn.Module):
         self.text_encoder = AutoModel.from_pretrained(config.text_encoder)
         self.tokenizer = AutoTokenizer.from_pretrained(config.text_encoder)
         
-        # Gemma 2048 -> 768 projection (SigLIP과 동일한 차원으로 축소)
+        # Gemma의 실제 hidden_size -> 768 projection (SigLIP과 동일한 차원으로 축소)
         if "gemma" in config.text_encoder.lower():
-            self.text_projection = nn.Linear(2048, config.text_feature_dim)
+            gemma_hidden_size = self.text_encoder.config.hidden_size
+            print(f"  Gemma 실제 hidden_size: {gemma_hidden_size}")
+            self.text_projection = nn.Linear(gemma_hidden_size, config.text_feature_dim)
         else:
             self.text_projection = None
         
