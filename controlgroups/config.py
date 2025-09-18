@@ -20,7 +20,7 @@ class ControlGroupConfig:
     batch_size: int = 64
     learning_rate: float = 2e-5
     num_epochs: int = 100
-    early_stopping_patience: int = 10
+    early_stopping_patience: int = 15
     
     # 모델 공통 설정
     hidden_dim: int = 768
