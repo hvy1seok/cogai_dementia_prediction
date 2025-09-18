@@ -15,6 +15,83 @@ import numpy as np
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 
 from config import AudioOnlyConfig, TextOnlyConfig, ConcatConfig
+import librosa
+from PIL import Image
+import matplotlib.pyplot as plt
+
+class AudioToMelSpectrogram:
+    """오디오를 멜스펙토그램으로 변환하는 클래스 - siglip 방식 사용"""
+    
+    def __init__(self, 
+                 sample_rate: int = 16000,
+                 n_mels: int = 128,
+                 n_fft: int = 2048,
+                 hop_length: int = 512,
+                 fmin: float = 0.0,
+                 fmax: float = 8000.0,
+                 image_size: int = 224):
+        
+        self.sample_rate = sample_rate
+        self.n_mels = n_mels
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.fmin = fmin
+        self.fmax = fmax
+        self.image_size = image_size
+    
+    def audio_to_melspectrogram(self, audio_path: str) -> np.ndarray:
+        """오디오 파일을 멜스펙토그램으로 변환 - siglip 방식"""
+        try:
+            # 오디오 로드
+            audio, sr = librosa.load(audio_path, sr=self.sample_rate)
+            
+            # 멜스펙토그램 계산
+            mel_spec = librosa.feature.melspectrogram(
+                y=audio,
+                sr=self.sample_rate,
+                n_mels=self.n_mels,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length,
+                fmin=self.fmin,
+                fmax=self.fmax
+            )
+            
+            # dB 스케일로 변환
+            mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+            
+            return mel_spec_db
+            
+        except Exception as e:
+            print(f"오디오 처리 중 오류 발생: {e}")
+            # 빈 멜스펙토그램 반환
+            return np.zeros((self.n_mels, 100))
+    
+    def melspectrogram_to_image(self, mel_spec: np.ndarray) -> Image.Image:
+        """멜스펙토그램을 PIL 이미지로 변환 - siglip 방식"""
+        # 정규화 (0-255 범위로)
+        mel_spec_norm = ((mel_spec - mel_spec.min()) / (mel_spec.max() - mel_spec.min()) * 255).astype(np.uint8)
+        
+        # PIL 이미지로 변환
+        image = Image.fromarray(mel_spec_norm, mode='L')
+        
+        # RGB로 변환 (ViT는 RGB 이미지를 요구)
+        image_rgb = image.convert('RGB')
+        
+        # 크기 조정
+        image_resized = image_rgb.resize((self.image_size, self.image_size), Image.Resampling.LANCZOS)
+        
+        return image_resized
+    
+    def process_audio_file(self, audio_path: str) -> Image.Image:
+        """오디오 파일을 처리하여 이미지로 변환 - 통합 메서드"""
+        try:
+            mel_spec = self.audio_to_melspectrogram(audio_path)
+            image = self.melspectrogram_to_image(mel_spec)
+            return image
+        except Exception as e:
+            print(f"오디오 파일 처리 중 오류: {e}")
+            # 기본 검은색 이미지 반환
+            return Image.new('RGB', (self.image_size, self.image_size), color=(0, 0, 0))
 
 class FocalLoss(nn.Module):
     """Focal Loss for imbalanced classification"""

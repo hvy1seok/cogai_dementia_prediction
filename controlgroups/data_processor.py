@@ -21,6 +21,7 @@ from config import ControlGroupConfig
 import sys
 sys.path.append('../siglip')
 from language_parsers import parse_all_languages
+from models import AudioToMelSpectrogram
 
 class ControlGroupDataset(Dataset):
     """대조군 모델을 위한 데이터셋"""
@@ -44,6 +45,17 @@ class ControlGroupDataset(Dataset):
         self.tokenizer = tokenizer
         self.processor = processor
         self.mode = mode
+        
+        # siglip 방식 오디오 프로세서 초기화
+        self.audio_processor = AudioToMelSpectrogram(
+            sample_rate=16000,
+            n_mels=128,
+            n_fft=2048,
+            hop_length=512,
+            fmin=0.0,
+            fmax=8000.0,
+            image_size=224
+        )
     
     def __len__(self) -> int:
         return len(self.data)
@@ -58,21 +70,52 @@ class ControlGroupDataset(Dataset):
             'file_id': item['file_id']
         }
         
-        # 오디오 처리 (Audio-only, Multimodal)
+        # 오디오 처리 (Audio-only, Multimodal) - siglip 방식 사용
         if self.mode in ["audio_only", "multimodal"] and self.processor is not None:
             try:
-                # 스펙트로그램 이미지 로드
-                spectrogram_path = item['spectrogram_path']
-                if os.path.exists(spectrogram_path):
-                    image = Image.open(spectrogram_path).convert('RGB')
+                audio_path = item.get('audio_path', item.get('spectrogram_path', ''))
+                
+                if audio_path and os.path.exists(audio_path):
+                    # .npy 파일인 경우 (전처리된 스펙트로그램)
+                    if audio_path.endswith('.npy'):
+                        try:
+                            audio_spec = np.load(audio_path)
+                            # 이미 멜스펙토그램 형태라면 바로 이미지로 변환
+                            if len(audio_spec.shape) == 2:
+                                image = self.audio_processor.melspectrogram_to_image(audio_spec)
+                            else:
+                                # 3차원인 경우 (3, H, W) -> (H, W) 변환
+                                if audio_spec.shape[0] == 3:
+                                    # RGB 채널 평균 또는 첫 번째 채널 사용
+                                    audio_spec_2d = np.mean(audio_spec, axis=0)
+                                else:
+                                    audio_spec_2d = audio_spec[0] if len(audio_spec.shape) == 3 else audio_spec
+                                image = self.audio_processor.melspectrogram_to_image(audio_spec_2d)
+                        except Exception as e:
+                            print(f"NPY 파일 로드 오류 {audio_path}: {e}")
+                            # 빈 멜스펙토그램으로 대체
+                            empty_spec = np.zeros((128, 100))
+                            image = self.audio_processor.melspectrogram_to_image(empty_spec)
+                    else:
+                        # 일반 오디오 파일인 경우 siglip 방식으로 처리
+                        image = self.audio_processor.process_audio_file(audio_path)
+                    
+                    # 이미지를 ViT용 텐서로 변환
                     pixel_values = self.processor(images=image, return_tensors="pt")['pixel_values'][0]
                     result['pixel_values'] = pixel_values
                 else:
-                    # 더미 이미지 (224x224x3)
-                    result['pixel_values'] = torch.zeros((3, 224, 224), dtype=torch.float32)
+                    print(f"⚠️ 오디오 파일 없음: {audio_path}")
+                    # 기본 검은색 이미지로 대체
+                    default_image = Image.new('RGB', (224, 224), color=(0, 0, 0))
+                    pixel_values = self.processor(images=default_image, return_tensors="pt")['pixel_values'][0]
+                    result['pixel_values'] = pixel_values
+                    
             except Exception as e:
                 print(f"오디오 처리 오류: {e}")
-                result['pixel_values'] = torch.zeros((3, 224, 224), dtype=torch.float32)
+                # 오류 시 기본 검은색 이미지
+                default_image = Image.new('RGB', (224, 224), color=(0, 0, 0))
+                pixel_values = self.processor(images=default_image, return_tensors="pt")['pixel_values'][0]
+                result['pixel_values'] = pixel_values
         
         # 텍스트 처리 (Text-only, Multimodal)
         if self.mode in ["text_only", "multimodal"] and self.tokenizer is not None:
