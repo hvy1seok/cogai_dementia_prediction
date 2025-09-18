@@ -176,12 +176,26 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     # 작은 데이터셋에서는 에폭 단위로 검증 수행
     val_check_interval = None if len(train_loader) < 50 else training_config.eval_steps
     
+    # 전략 설정 (멀티 GPU 환경에서 unused parameters 처리)
+    strategy = 'auto'
+    try:
+        # GPU 개수 확인
+        if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+            from pytorch_lightning.strategies import DDPStrategy
+            strategy = DDPStrategy(find_unused_parameters=True)
+            print(f"✅ DDP 전략 설정: {torch.cuda.device_count()}개 GPU, unused parameters 허용")
+        else:
+            print("✅ 단일 GPU/CPU 모드: 기본 전략 사용")
+    except Exception as e:
+        print(f"⚠️ 전략 설정 실패, 기본값 사용: {e}")
+    
     trainer = pl.Trainer(
         max_epochs=getattr(config, 'num_epochs', 100),
         logger=wandb_logger,
         callbacks=callbacks,
         accelerator='auto',
         devices='auto',
+        strategy=strategy,
         precision='16-mixed' if training_config.fp16 else 32,
         gradient_clip_val=training_config.max_grad_norm,
         accumulate_grad_batches=training_config.gradient_accumulation_steps,
