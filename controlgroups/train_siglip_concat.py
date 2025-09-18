@@ -73,7 +73,12 @@ def train_epoch(model: nn.Module, train_loader: DataLoader, optimizer: optim.Opt
         
         # 순전파
         logits = model(pixel_values, input_ids, attention_mask)
-        loss = model.compute_loss(logits, labels)
+        
+        # DataParallel 사용 시 module 속성 접근
+        if hasattr(model, 'module'):
+            loss = model.module.compute_loss(logits, labels)
+        else:
+            loss = model.compute_loss(logits, labels)
         
         # 역전파
         loss.backward()
@@ -139,7 +144,12 @@ def validate_epoch(model: nn.Module, val_loader: DataLoader, config: ConcatConfi
             
             # 순전파
             logits = model(pixel_values, input_ids, attention_mask)
-            loss = model.compute_loss(logits, labels)
+            
+            # DataParallel 사용 시 module 속성 접근
+            if hasattr(model, 'module'):
+                loss = model.module.compute_loss(logits, labels)
+            else:
+                loss = model.compute_loss(logits, labels)
             
             total_loss += loss.item()
             
