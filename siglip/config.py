@@ -98,7 +98,7 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 1
     max_grad_norm: float = 1.0
     save_steps: int = 500
-    eval_steps: int = 500
+    eval_steps: int = 1  # 매 에폭마다 검증 (작은 데이터셋 대응)
     logging_steps: int = 100
     save_total_limit: int = 3
     

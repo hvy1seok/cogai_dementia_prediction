@@ -173,6 +173,9 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
     callbacks = create_callbacks(training_config, config.checkpoint_dir, config)
     
     # 트레이너 설정
+    # 작은 데이터셋에서는 에폭 단위로 검증 수행
+    val_check_interval = None if len(train_loader) < 50 else training_config.eval_steps
+    
     trainer = pl.Trainer(
         max_epochs=getattr(config, 'num_epochs', 100),
         logger=wandb_logger,
@@ -182,8 +185,9 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
         precision='16-mixed' if training_config.fp16 else 32,
         gradient_clip_val=training_config.max_grad_norm,
         accumulate_grad_batches=training_config.gradient_accumulation_steps,
-        val_check_interval=training_config.eval_steps,
-        log_every_n_steps=training_config.logging_steps,
+        val_check_interval=val_check_interval,
+        check_val_every_n_epoch=1 if val_check_interval is None else None,
+        log_every_n_steps=min(training_config.logging_steps, len(train_loader)),
         deterministic=True,
         enable_progress_bar=True,
         enable_model_summary=True

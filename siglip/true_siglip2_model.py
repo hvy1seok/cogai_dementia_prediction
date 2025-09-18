@@ -369,6 +369,14 @@ class TrueSigLIP2DementiaClassifier(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         
+        # config 속성 저장 (AUC 계산에 필요)
+        self.config = type('Config', (), {
+            'num_classes': num_classes,
+            'loss_type': loss_type,
+            'focal_alpha': focal_alpha,
+            'focal_gamma': focal_gamma
+        })()
+        
         print("🔥 진정한 SigLIP2 모델 초기화 시작...")
         
         # Base SigLIP2 모델 (Student)
@@ -738,8 +746,8 @@ class TrueSigLIP2DementiaClassifier(pl.LightningModule):
         self.validation_step_outputs.append(output)
         
         # 로깅
-        self.log('val_loss', loss, prog_bar=True)
-        self.log('val_acc', self.val_accuracy, prog_bar=True)
+        self.log('val_loss', loss, prog_bar=True, sync_dist=True)
+        self.log('val_acc', self.val_accuracy, prog_bar=True, sync_dist=True)
         
         return loss
     
@@ -842,12 +850,12 @@ class TrueSigLIP2DementiaClassifier(pl.LightningModule):
             probs = torch.softmax(all_logits, dim=1)[:, 1].cpu().numpy()
             labels = all_labels.cpu().numpy()
             auc = roc_auc_score(labels, probs)
-            self.log('val_auc', auc)
+            self.log('val_auc', auc, sync_dist=True)
             
             # 언어별 AUC 계산 및 평균 계산
             lang_aucs = self._compute_language_aucs(probs, labels, all_languages)
             for lang, lang_auc in lang_aucs.items():
-                self.log(f'val_{lang}_auc', lang_auc)
+                self.log(f'val_{lang}_auc', lang_auc, sync_dist=True)
             
             # 최적 threshold 계산
             from sklearn.metrics import roc_curve
@@ -861,27 +869,27 @@ class TrueSigLIP2DementiaClassifier(pl.LightningModule):
             _, _, macro_f1, _ = precision_recall_fscore_support(
                 labels, optimal_preds, average='macro', zero_division=0
             )
-            self.log('val_macro_f1', macro_f1)
+            self.log('val_macro_f1', macro_f1, sync_dist=True)
             
             # 언어별 Macro F1 계산
             lang_macro_f1s = self._compute_language_macro_f1s(probs, labels, all_languages, optimal_threshold)
             for lang, lang_macro_f1 in lang_macro_f1s.items():
-                self.log(f'val_{lang}_macro_f1', lang_macro_f1)
+                self.log(f'val_{lang}_macro_f1', lang_macro_f1, sync_dist=True)
             
             # 베스트 모델 선택 기준에 따른 메트릭 계산
             if hasattr(self.config, 'best_model_metric'):
                 if self.config.best_model_metric == "avg_lang_auc":
                     avg_lang_auc = self._compute_target_languages_avg_auc(lang_aucs, self.config.target_languages)
-                    self.log('val_avg_lang_auc', avg_lang_auc)
+                    self.log('val_avg_lang_auc', avg_lang_auc, sync_dist=True)
                     print(f"📊 타겟 언어별 평균 AUC: {avg_lang_auc:.4f}")
                 elif self.config.best_model_metric == "avg_lang_macro_f1":
                     avg_lang_macro_f1 = self._compute_target_languages_avg_macro_f1(lang_macro_f1s, self.config.target_languages)
-                    self.log('val_avg_lang_macro_f1', avg_lang_macro_f1)
+                    self.log('val_avg_lang_macro_f1', avg_lang_macro_f1, sync_dist=True)
                     print(f"📊 타겟 언어별 평균 Macro F1: {avg_lang_macro_f1:.4f}")
             
         except Exception as e:
             print(f"⚠️ AUC 계산 실패: {e}")
-            self.log('val_auc', 0.0)
+            self.log('val_auc', 0.0, sync_dist=True)
         
         self.validation_step_outputs.clear()
     
@@ -1150,5 +1158,9 @@ def create_true_siglip2_model(config) -> TrueSigLIP2DementiaClassifier:
         vocab_size=getattr(config, 'vocab_size', 30522),
         max_caption_length=getattr(config, 'max_caption_length', 77)
     )
+    
+    # 추가 config 속성 설정
+    model.config.best_model_metric = getattr(config, 'best_model_metric', 'val_macro_f1')
+    model.config.target_languages = getattr(config, 'target_languages', ['English', 'Mandarin'])
     
     return model
