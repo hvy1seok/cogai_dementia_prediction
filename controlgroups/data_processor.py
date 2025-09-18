@@ -116,16 +116,31 @@ class ControlGroupDataset(Dataset):
             try:
                 text = item['text']
                 if text and text.strip():
-                    # 토큰화
+                    # 토큰화 (SigLIP2 토크나이저 호환: attention_mask 보장)
                     encoded = self.tokenizer(
                         text,
                         max_length=self.config.max_seq_length,
                         padding='max_length',
                         truncation=True,
-                        return_tensors='pt'
+                        return_tensors='pt',
+                        return_attention_mask=True
                     )
-                    result['input_ids'] = encoded['input_ids'][0]
-                    result['attention_mask'] = encoded['attention_mask'][0]
+                    input_ids = encoded['input_ids']
+                    # 일부 토크나이저에서 attention_mask가 생성되지 않는 경우 대비
+                    if 'attention_mask' in encoded:
+                        attention_mask = encoded['attention_mask']
+                    else:
+                        pad_id = getattr(self.tokenizer, 'pad_token_id', None)
+                        if pad_id is None and getattr(self.tokenizer, 'eos_token_id', None) is not None:
+                            pad_id = self.tokenizer.eos_token_id
+                        if pad_id is None:
+                            # 최후 수단: 1로 채움
+                            attention_mask = (input_ids != -100).long()
+                        else:
+                            attention_mask = (input_ids != pad_id).long()
+
+                    result['input_ids'] = input_ids[0]
+                    result['attention_mask'] = attention_mask[0]
                 else:
                     # SigLIP 방식: 이미 필터링되어 이 경우는 발생하지 않아야 함
                     raise ValueError(f"텍스트 없음 (필터링 오류): {item.get('file_id', 'unknown')}")
