@@ -76,7 +76,7 @@ class ControlGroupDataset(Dataset):
                 audio_path = item.get('audio_path', item.get('spectrogram_path', ''))
                 
                 if audio_path and os.path.exists(audio_path):
-                    # .npy 파일인 경우 (전처리된 스펙트로그램)
+                    # SigLIP과 동일: .npy 파일만 사용 (빠른 처리)
                     if audio_path.endswith('.npy'):
                         try:
                             audio_spec = np.load(audio_path)
@@ -97,8 +97,8 @@ class ControlGroupDataset(Dataset):
                             empty_spec = np.zeros((128, 100))
                             image = self.audio_processor.melspectrogram_to_image(empty_spec)
                     else:
-                        # 일반 오디오 파일인 경우 siglip 방식으로 처리
-                        image = self.audio_processor.process_audio_file(audio_path)
+                        # SigLIP과 동일: .npy 파일이 아니면 제외 (실시간 처리 방지)
+                        raise ValueError(f"SigLIP 방식: .npy 파일만 지원 (실시간 오디오 처리 제외): {audio_path}")
                     
                     # 이미지를 ViT용 텐서로 변환
                     pixel_values = self.processor(images=image, return_tensors="pt")['pixel_values'][0]
