@@ -114,6 +114,13 @@ def load_multilingual_data(data_dir: str, languages: List[str]) -> List[Dict]:
             item['spectrogram_path'] = item['audio_path']
         if 'spectrogram_path' in item and 'audio_available' not in item:
             item['audio_available'] = os.path.exists(item['spectrogram_path']) if item['spectrogram_path'] else False
+        
+        # patient_id가 없는 경우 file_id에서 추출
+        if 'patient_id' not in item or not item['patient_id']:
+            file_id = item.get('file_id', 'unknown')
+            # 파일명에서 환자 ID 추출 (기본 로직)
+            patient_id = file_id.split('_')[0] if '_' in file_id else file_id
+            item['patient_id'] = patient_id
     
     print(f"📊 전체 로드된 데이터: {len(data)}개 샘플")
     
@@ -235,7 +242,8 @@ def create_patient_based_split(
     # 환자별 데이터 그룹핑
     patient_groups = defaultdict(list)
     for idx, item in enumerate(dataset):
-        key = f"{item['patient_id']}_{item['language']}_{item['label']}"
+        patient_id = item.get('patient_id', item.get('file_id', f'patient_{idx}'))
+        key = f"{patient_id}_{item['language']}_{item['label']}"
         patient_groups[key].append(idx)
     
     # 계층화 키 생성
