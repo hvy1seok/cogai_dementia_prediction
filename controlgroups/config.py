@@ -58,7 +58,8 @@ class AudioOnlyConfig(ControlGroupConfig):
     """ViT-Spec (Audio-only) 모델 설정"""
     
     # 오디오 전용 설정
-    model_name: str = "google/vit-base-patch16-224"
+    model_name: str = "google/vit-base-patch16-224"  # ViT 백본 (기존)
+    siglip_model: str = "google/siglip-base-patch16-224"  # SigLIP 백본 (새로운 기본값)
     audio_feature_dim: int = 768
     mel_bins: int = 128
     max_audio_length: int = 1024
@@ -76,7 +77,9 @@ class TextOnlyConfig(ControlGroupConfig):
     """Text-only (Gemma Encoder) 모델 설정"""
     
     # 텍스트 전용 설정
-    text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지
+    text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지 (기존)
+    siglip_model: str = "google/siglip-base-patch16-224"  # SigLIP 백본 (새로운 기본값)
+    text_tokenizer: str = "google/gemma-2b"  # Gemma 토크나이저
     text_feature_dim: int = 768  # SigLIP과 동일한 차원으로 제한
     use_cls_token: bool = True
     
@@ -93,13 +96,15 @@ class ConcatConfig(ControlGroupConfig):
     """Concat (ViT + XLM-R) Late Fusion 모델 설정"""
     
     # 오디오 인코더 설정
-    audio_encoder: str = "google/vit-base-patch16-224"
+    audio_encoder: str = "google/vit-base-patch16-224"  # ViT 백본 (기존)
+    siglip_model: str = "google/siglip-base-patch16-224"  # SigLIP 백본 (새로운 기본값)
     audio_feature_dim: int = 768
     mel_bins: int = 128
     max_audio_length: int = 1024
     
     # 텍스트 인코더 설정
-    text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지
+    text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지 (기존)
+    text_tokenizer: str = "google/gemma-2b"  # Gemma 토크나이저
     text_feature_dim: int = 768  # SigLIP과 동일한 차원으로 제한
     use_cls_token: bool = True
     

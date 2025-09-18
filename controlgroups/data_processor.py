@@ -135,7 +135,7 @@ class ControlGroupDataset(Dataset):
         
         return result
 
-def load_multilingual_data(data_dir: str, languages: List[str]) -> List[Dict]:
+def load_multilingual_data(data_dir: str, languages: List[str], mode: str = "multimodal") -> List[Dict]:
     """멀티링궐 데이터 로드"""
     
     print(f"📂 siglip 파서를 사용하여 다국어 데이터 로드 중: {languages}")
@@ -176,18 +176,37 @@ def load_multilingual_data(data_dir: str, languages: List[str]) -> List[Dict]:
         if text and text.strip():
             text_available = True
         
-        # 완전한 샘플만 포함 (SigLIP 방식)
-        # 멀티모달 실험을 위해 오디오와 텍스트 모두 필요
-        if audio_available and text_available:
+        # 모델별 필터링 로직
+        include_sample = False
+        missing_parts = []
+        
+        if mode == "audio_only":
+            # 오디오 전용: 오디오만 필요
+            if audio_available:
+                include_sample = True
+            else:
+                missing_parts.append("오디오")
+        elif mode == "text_only":
+            # 텍스트 전용: 텍스트만 필요
+            if text_available:
+                include_sample = True
+            else:
+                missing_parts.append("텍스트")
+        else:  # multimodal
+            # 멀티모달: 오디오와 텍스트 모두 필요
+            if audio_available and text_available:
+                include_sample = True
+            else:
+                if not audio_available:
+                    missing_parts.append("오디오")
+                if not text_available:
+                    missing_parts.append("텍스트")
+        
+        if include_sample:
             filtered_data.append(item)
         else:
             excluded_count += 1
-            missing_parts = []
-            if not audio_available:
-                missing_parts.append("오디오")
-            if not text_available:
-                missing_parts.append("텍스트")
-            print(f"⚠️ 누락 데이터로 인한 샘플 제외: {item.get('file_id', 'unknown')} ({', '.join(missing_parts)} 누락)")
+            print(f"⚠️ 누락 데이터로 인한 샘플 제외 ({mode} 모드): {item.get('file_id', 'unknown')} ({', '.join(missing_parts)} 누락)")
     
     print(f"🔍 데이터 필터링 결과:")
     print(f"  ✅ 완전한 샘플: {len(filtered_data)}개")
@@ -469,8 +488,8 @@ def create_dataloaders(
 ) -> Tuple[DataLoader, DataLoader, Optional[DataLoader]]:
     """데이터로더 생성"""
     
-    # 데이터 로드
-    all_data = load_multilingual_data(config.data_dir, config.languages)
+    # 데이터 로드 (모델별 필터링 적용)
+    all_data = load_multilingual_data(config.data_dir, config.languages, mode)
     
     if len(all_data) == 0:
         raise ValueError("로드된 데이터가 없습니다!")
