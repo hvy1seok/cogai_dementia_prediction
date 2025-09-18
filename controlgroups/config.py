@@ -77,7 +77,7 @@ class TextOnlyConfig(ControlGroupConfig):
     
     # 텍스트 전용 설정
     text_encoder: str = "google/gemma-2b"  # 또는 "xlm-roberta-base"
-    text_feature_dim: int = 768
+    text_feature_dim: int = 2048  # Gemma-2b의 실제 출력 차원
     use_cls_token: bool = True
     
     # 분류기 설정
@@ -99,13 +99,13 @@ class ConcatConfig(ControlGroupConfig):
     max_audio_length: int = 1024
     
     # 텍스트 인코더 설정
-    text_encoder: str = "xlm-roberta-base"  # 또는 "google/gemma-2b"
-    text_feature_dim: int = 768
+    text_encoder: str = "google/gemma-2b"  # Gemma-2b로 변경
+    text_feature_dim: int = 2048  # Gemma-2b의 실제 출력 차원
     use_cls_token: bool = True
     
     # Late Fusion 설정
     fusion_method: str = "concat"  # "concat", "add", "attention"
-    fused_feature_dim: int = 1536  # audio_dim + text_dim
+    fused_feature_dim: int = 2816  # audio_dim(768) + text_dim(2048)
     
     # 2층 FFN 설정
     ffn_hidden_dims: List[int] = None
@@ -114,4 +114,5 @@ class ConcatConfig(ControlGroupConfig):
         super().__post_init__()
         if self.ffn_hidden_dims is None:
             self.ffn_hidden_dims = [1024, 512]  # 2층 FFN
-        self.fused_feature_dim = self.audio_feature_dim + self.text_feature_dim
+        # Gemma-2b 사용 시 차원 업데이트
+        self.fused_feature_dim = self.audio_feature_dim + self.text_feature_dim  # 768 + 2048 = 2816
