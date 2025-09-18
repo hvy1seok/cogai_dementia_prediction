@@ -104,18 +104,12 @@ class ControlGroupDataset(Dataset):
                     pixel_values = self.processor(images=image, return_tensors="pt")['pixel_values'][0]
                     result['pixel_values'] = pixel_values
                 else:
-                    print(f"⚠️ 오디오 파일 없음: {audio_path}")
-                    # 기본 검은색 이미지로 대체
-                    default_image = Image.new('RGB', (224, 224), color=(0, 0, 0))
-                    pixel_values = self.processor(images=default_image, return_tensors="pt")['pixel_values'][0]
-                    result['pixel_values'] = pixel_values
+                    # SigLIP 방식: 이미 필터링되어 이 경우는 발생하지 않아야 함
+                    raise ValueError(f"오디오 파일 없음 (필터링 오류): {audio_path}")
                     
             except Exception as e:
-                print(f"오디오 처리 오류: {e}")
-                # 오류 시 기본 검은색 이미지
-                default_image = Image.new('RGB', (224, 224), color=(0, 0, 0))
-                pixel_values = self.processor(images=default_image, return_tensors="pt")['pixel_values'][0]
-                result['pixel_values'] = pixel_values
+                # SigLIP 방식: 오류 시 예외 발생 (필터링되어야 할 샘플)
+                raise ValueError(f"오디오 처리 오류 (필터링 오류): {e}")
         
         # 텍스트 처리 (Text-only, Multimodal)
         if self.mode in ["text_only", "multimodal"] and self.tokenizer is not None:
@@ -133,13 +127,11 @@ class ControlGroupDataset(Dataset):
                     result['input_ids'] = encoded['input_ids'][0]
                     result['attention_mask'] = encoded['attention_mask'][0]
                 else:
-                    # 빈 텍스트 처리
-                    result['input_ids'] = torch.zeros(self.config.max_seq_length, dtype=torch.long)
-                    result['attention_mask'] = torch.zeros(self.config.max_seq_length, dtype=torch.long)
+                    # SigLIP 방식: 이미 필터링되어 이 경우는 발생하지 않아야 함
+                    raise ValueError(f"텍스트 없음 (필터링 오류): {item.get('file_id', 'unknown')}")
             except Exception as e:
-                print(f"텍스트 처리 오류: {e}")
-                result['input_ids'] = torch.zeros(self.config.max_seq_length, dtype=torch.long)
-                result['attention_mask'] = torch.zeros(self.config.max_seq_length, dtype=torch.long)
+                # SigLIP 방식: 오류 시 예외 발생 (필터링되어야 할 샘플)
+                raise ValueError(f"텍스트 처리 오류 (필터링 오류): {e}")
         
         return result
 
@@ -167,9 +159,47 @@ def load_multilingual_data(data_dir: str, languages: List[str]) -> List[Dict]:
     
     print(f"📊 전체 로드된 데이터: {len(data)}개 샘플")
     
-    # 언어별 분포
+    # SigLIP과 동일한 방식: 누락 데이터가 있는 샘플 필터링
+    filtered_data = []
+    excluded_count = 0
+    
+    for item in data:
+        # 오디오 파일 존재 여부 확인
+        audio_available = False
+        audio_path = item.get('audio_path') or item.get('spectrogram_path', '')
+        if audio_path and os.path.exists(audio_path):
+            audio_available = True
+        
+        # 텍스트 데이터 존재 여부 확인
+        text_available = False
+        text = item.get('text', '')
+        if text and text.strip():
+            text_available = True
+        
+        # 완전한 샘플만 포함 (SigLIP 방식)
+        # 멀티모달 실험을 위해 오디오와 텍스트 모두 필요
+        if audio_available and text_available:
+            filtered_data.append(item)
+        else:
+            excluded_count += 1
+            missing_parts = []
+            if not audio_available:
+                missing_parts.append("오디오")
+            if not text_available:
+                missing_parts.append("텍스트")
+            print(f"⚠️ 누락 데이터로 인한 샘플 제외: {item.get('file_id', 'unknown')} ({', '.join(missing_parts)} 누락)")
+    
+    print(f"🔍 데이터 필터링 결과:")
+    print(f"  ✅ 완전한 샘플: {len(filtered_data)}개")
+    print(f"  ❌ 제외된 샘플: {excluded_count}개")
+    print(f"  📊 사용률: {len(filtered_data)/(len(filtered_data)+excluded_count)*100:.1f}%")
+    
+    # 필터링된 데이터 사용
+    data = filtered_data
+    
+    # 언어별 분포 (필터링 후)
     lang_counts = Counter([item['language'] for item in data])
-    print("📈 언어별 분포:")
+    print("📈 언어별 분포 (필터링 후):")
     for lang, count in lang_counts.items():
         print(f"  {lang}: {count}개")
     
