@@ -14,7 +14,7 @@ class ControlGroupConfig:
     # 데이터 설정
     data_dir: str = "../../training_dset"
     languages: List[str] = None  # ["English", "Mandarin"] or ["English", "Greek", "Spanish", "Mandarin"]
-    max_seq_length: int = 512
+    max_seq_length: int = 64  # SigLIP 최대 지원 길이
     
     # 훈련 설정
     batch_size: int = 64
@@ -77,9 +77,9 @@ class TextOnlyConfig(ControlGroupConfig):
     """Text-only (Gemma Encoder) 모델 설정"""
     
     # 텍스트 전용 설정
-    text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지 (기존)
+    text_encoder: str = "xlm-roberta-base"  # XLM-R 다국어 토크나이저 (빠른 해결)
     siglip_model: str = "google/siglip-base-patch16-224"  # SigLIP 백본 (새로운 기본값)
-    text_tokenizer: str = "google/gemma-2b"  # Gemma 토크나이저
+    text_tokenizer: str = "xlm-roberta-base"  # XLM-R 다국어 토크나이저
     text_feature_dim: int = 768  # SigLIP과 동일한 차원으로 제한
     use_cls_token: bool = True
     
@@ -103,8 +103,8 @@ class ConcatConfig(ControlGroupConfig):
     max_audio_length: int = 1024
     
     # 텍스트 인코더 설정
-    text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지 (기존)
-    text_tokenizer: str = "google/gemma-2b"  # Gemma 토크나이저
+    text_encoder: str = "xlm-roberta-base"  # XLM-R 다국어 토크나이저 (빠른 해결)
+    text_tokenizer: str = "xlm-roberta-base"  # XLM-R 다국어 토크나이저
     text_feature_dim: int = 768  # SigLIP과 동일한 차원으로 제한
     use_cls_token: bool = True
     

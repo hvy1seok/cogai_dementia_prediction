@@ -19,7 +19,7 @@ EARLY_STOPPING_PATIENCE=15
 
 # 모델 설정
 SIGLIP_MODEL="google/siglip-base-patch16-224"
-TEXT_TOKENIZER="google/gemma-2b"
+TEXT_TOKENIZER="xlm-roberta-base"
 LOSS_TYPE="focal"
 FOCAL_ALPHA=1.0
 FOCAL_GAMMA=2.0
@@ -46,7 +46,7 @@ echo "  에포크: $NUM_EPOCHS"
 echo ""
 echo "🤖 모델 구성:"
 echo "  SigLIP 백본: $SIGLIP_MODEL"
-echo "  텍스트 토크나이저: $TEXT_TOKENIZER (256K vocab, multilingual)"
+echo "  텍스트 토크나이저: $TEXT_TOKENIZER (다국어 지원, 안정적)"
 echo "  손실 함수: $LOSS_TYPE (alpha=$FOCAL_ALPHA, gamma=$FOCAL_GAMMA)"
 echo "  자동 클래스 가중치: $AUTO_CLASS_WEIGHTS"
 echo "  환자 단위 분할: $SPLIT_BY_PATIENT"
@@ -59,7 +59,7 @@ echo ""
 echo "🎯 SigLIP 기반 대조군 특징:"
 echo "  ✅ 동일한 SigLIP 백본 사용 (공정한 비교)"
 echo "  ✅ 동일한 전처리 파이프라인 (.npy 파일)"
-echo "  ✅ 동일한 Gemma 토크나이저 (256K vocab)"
+echo "  ✅ 동일한 XLM-R 토크나이저 (다국어 지원)"
 echo "  ✅ 동일한 데이터 품질 (완전한 샘플만 사용)"
 echo "  ✅ 동일한 처리 속도 (SigLIP과 동일)"
 echo ""

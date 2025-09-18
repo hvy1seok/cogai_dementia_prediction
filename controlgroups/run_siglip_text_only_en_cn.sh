@@ -19,7 +19,7 @@ EARLY_STOPPING_PATIENCE=15
 
 # 모델 설정
 SIGLIP_MODEL="google/siglip-base-patch16-224"
-TEXT_TOKENIZER="google/gemma-2b"
+TEXT_TOKENIZER="xlm-roberta-base"
 LOSS_TYPE="focal"
 FOCAL_ALPHA=1.0
 FOCAL_GAMMA=2.0
