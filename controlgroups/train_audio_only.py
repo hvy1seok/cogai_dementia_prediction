@@ -31,6 +31,10 @@ def train_epoch(model: nn.Module,
     """한 에포크 훈련"""
     
     model.train()
+    
+    # DataParallel 모델인지 확인
+    model_for_loss = model.module if hasattr(model, 'module') else model
+    
     total_loss = 0.0
     all_preds = []
     all_labels = []
@@ -44,7 +48,7 @@ def train_epoch(model: nn.Module,
         # Forward pass
         optimizer.zero_grad()
         logits = model(pixel_values)
-        loss = model.compute_loss(logits, labels)
+        loss = model_for_loss.compute_loss(logits, labels)
         
         # Backward pass
         loss.backward()
@@ -99,6 +103,9 @@ def validate_epoch(model: nn.Module,
     """검증"""
     
     model.eval()
+    
+    # DataParallel 모델인지 확인
+    model_for_loss = model.module if hasattr(model, 'module') else model
     total_loss = 0.0
     all_preds = []
     all_labels = []
@@ -114,7 +121,7 @@ def validate_epoch(model: nn.Module,
             
             # Forward pass
             logits = model(pixel_values)
-            loss = model.compute_loss(logits, labels)
+            loss = model_for_loss.compute_loss(logits, labels)
             
             total_loss += loss.item()
             
