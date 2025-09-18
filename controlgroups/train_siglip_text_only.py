@@ -394,7 +394,7 @@ def main():
     parser = argparse.ArgumentParser(description="SigLIP-Text-Only 모델 훈련")
     
     # 데이터 관련
-    parser.add_argument('--data_dir', type=str, default='../training_dset', help='데이터 디렉토리')
+    parser.add_argument('--data_dir', type=str, default='../../training_dset', help='데이터 디렉토리')
     parser.add_argument('--languages', nargs='+', default=['English', 'Mandarin'], help='사용할 언어들')
     
     # 훈련 관련

@@ -11,7 +11,7 @@ export PYTHONPATH="$(pwd):$PYTHONPATH"
 
 # 실험 설정
 LANGUAGES=("English" "Mandarin")
-DATA_DIR="../training_dset"
+DATA_DIR="../../training_dset"
 BATCH_SIZE=10
 LEARNING_RATE=2e-5
 NUM_EPOCHS=100
