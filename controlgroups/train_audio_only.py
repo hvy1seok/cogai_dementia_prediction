@@ -60,9 +60,24 @@ def train_epoch(model: nn.Module,
             probs = torch.softmax(logits, dim=-1)
             preds = torch.argmax(logits, dim=-1)
         
-        all_preds.extend(preds.cpu().numpy())
-        all_labels.extend(labels.cpu().numpy())
-        all_probs.extend(probs.cpu().numpy() if config.num_classes == 2 else probs[:, 1].cpu().numpy())
+        # gradient 분리하여 numpy 변환
+        all_preds.extend(preds.detach().cpu().numpy())
+        all_labels.extend(labels.detach().cpu().numpy())
+        
+        # 확률 처리 - gradient 분리 및 예외 처리
+        try:
+            if config.num_classes == 2:
+                all_probs.extend(probs.detach().cpu().numpy())
+            else:
+                all_probs.extend(probs[:, 1].detach().cpu().numpy())
+        except Exception as e:
+            print(f"⚠️ 확률 계산 중 오류: {e}")
+            # 폴백: sigmoid 확률 사용
+            prob_values = torch.sigmoid(logits).detach().cpu().numpy()
+            if len(prob_values.shape) > 1 and prob_values.shape[1] > 1:
+                all_probs.extend(prob_values[:, 1])
+            else:
+                all_probs.extend(prob_values.flatten())
     
     if scheduler:
         scheduler.step()
@@ -111,9 +126,24 @@ def validate_epoch(model: nn.Module,
                 probs = torch.softmax(logits, dim=-1)
                 preds = torch.argmax(logits, dim=-1)
             
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-            all_probs.extend(probs.cpu().numpy() if config.num_classes == 2 else probs[:, 1].cpu().numpy())
+            # gradient 분리하여 numpy 변환
+            all_preds.extend(preds.detach().cpu().numpy())
+            all_labels.extend(labels.detach().cpu().numpy())
+            
+            # 확률 처리 - gradient 분리 및 예외 처리
+            try:
+                if config.num_classes == 2:
+                    all_probs.extend(probs.detach().cpu().numpy())
+                else:
+                    all_probs.extend(probs[:, 1].detach().cpu().numpy())
+            except Exception as e:
+                print(f"⚠️ 검증 확률 계산 중 오류: {e}")
+                # 폴백: sigmoid 확률 사용
+                prob_values = torch.sigmoid(logits).detach().cpu().numpy()
+                if len(prob_values.shape) > 1 and prob_values.shape[1] > 1:
+                    all_probs.extend(prob_values[:, 1])
+                else:
+                    all_probs.extend(prob_values.flatten())
             all_languages.extend(languages)
     
     # 전체 지표 계산
