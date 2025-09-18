@@ -188,10 +188,14 @@ def train_model(config: SigLIPConfig, training_config: TrainingConfig):
         val_check_interval=val_check_interval,
         check_val_every_n_epoch=1 if val_check_interval is None else None,
         log_every_n_steps=min(training_config.logging_steps, len(train_loader)),
-        deterministic=True,
+        deterministic=False,  # CUDA upsample 연산과의 호환성을 위해 비활성화
         enable_progress_bar=True,
         enable_model_summary=True
     )
+    
+    # 시드 설정으로 재현성 보장 (deterministic 알고리즘 대신)
+    pl.seed_everything(42, workers=True)
+    print("✅ 시드 설정 완료 (재현성 보장)")
     
     # 훈련 시작
     print("🚀 진정한 SigLIP2 훈련 시작...")
