@@ -60,7 +60,7 @@ esac
 # 기본 설정
 DATA_DIR="../../training_dset"
 MODEL_NAME="google/siglip2-base-patch16-naflex"
-BATCH_SIZE=32
+BATCH_SIZE=64
 LEARNING_RATE=2e-5
 NUM_EPOCHS=100
 
@@ -100,7 +100,7 @@ echo "  학습률: $LEARNING_RATE"
 echo "  에포크 수: $NUM_EPOCHS"
 echo "  옵티마이저: $OPTIMIZER_TYPE (rho=$SAM_RHO)"
 echo "  손실 함수: $LOSS_TYPE + Multi-Loss"
-echo "  Early Stopping: 훈련 언어 Macro F1 기준 15 epochs patience"
+echo "  Early Stopping: 훈련 언어 Macro F1 기준 10 epochs patience"
 echo ""
 echo "📊 데이터 분할 방식:"
 echo "  👥 환자 단위 분할 - Speaker-Independent"
