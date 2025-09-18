@@ -81,6 +81,9 @@ echo "🚀 Text-only (Gemma Encoder) 대조군 모델 훈련 시작..."
 echo "📝 전사 텍스트 기반 치매 진단 모델 학습!"
 echo "================================"
 
+# controlgroups 디렉토리로 이동하여 실행 (import 오류 방지)
+cd "$(dirname "$0")"
+
 # 훈련 실행
 $PYTHON_CMD train_text_only.py \
     --data_dir "$DATA_DIR" \

@@ -17,7 +17,7 @@ import librosa
 import pandas as pd
 from collections import defaultdict, Counter
 
-from .config import ControlGroupConfig
+from config import ControlGroupConfig
 
 class ControlGroupDataset(Dataset):
     """대조군 모델을 위한 데이터셋"""

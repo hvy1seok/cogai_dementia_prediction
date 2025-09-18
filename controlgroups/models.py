@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 
-from .config import AudioOnlyConfig, TextOnlyConfig, ConcatConfig
+from config import AudioOnlyConfig, TextOnlyConfig, ConcatConfig
 
 class FocalLoss(nn.Module):
     """Focal Loss for imbalanced classification"""

@@ -18,6 +18,9 @@ fi
 
 MODEL_NUM=$1
 
+# controlgroups 디렉토리로 이동 (import 오류 방지)
+cd "$(dirname "$0")"
+
 # 모델별 실행
 case $MODEL_NUM in
     1)
