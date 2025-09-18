@@ -193,9 +193,16 @@ def train_model(config: TextOnlyConfig) -> Tuple[nn.Module, str]:
     print(f"  에포크: {config.num_epochs}")
     print(f"  Early Stopping: {config.early_stopping_patience} epochs")
     
-    # 디바이스 설정
+    # 멀티 GPU 디바이스 설정
     device = config.device
-    print(f"  디바이스: {device}")
+    if torch.cuda.is_available():
+        device_count = torch.cuda.device_count()
+        print(f"  사용 가능한 GPU: {device_count}개")
+        print(f"  주 디바이스: {device}")
+        if device_count > 1:
+            print(f"  멀티 GPU 모드: GPU 0-{device_count-1} 사용")
+    else:
+        print(f"  디바이스: {device}")
     
     # 토크나이저 로드
     tokenizer = AutoTokenizer.from_pretrained(config.text_encoder)
@@ -207,14 +214,23 @@ def train_model(config: TextOnlyConfig) -> Tuple[nn.Module, str]:
         config, mode="text_only", tokenizer=tokenizer
     )
     
-    # 모델 생성
+    # 모델 생성 및 멀티 GPU 설정
     model = TextOnlyModel(config).to(device)
+    
+    # 멀티 GPU 사용 가능 시 DataParallel 적용
+    if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+        print(f"🚀 멀티 GPU 활성화: {torch.cuda.device_count()}개 GPU 사용")
+        model = nn.DataParallel(model)
+        # DataParallel 사용 시 모듈 접근 방법 변경
+        model_for_loss = model.module
+    else:
+        model_for_loss = model
     
     # 클래스 가중치 계산 및 적용
     if config.auto_class_weights:
         class_weights = compute_class_weights(train_loader.dataset, config)
-        if hasattr(model.criterion, 'alpha'):
-            model.criterion.alpha = torch.tensor(class_weights[1] / class_weights[0]).to(device)
+        if hasattr(model_for_loss.criterion, 'alpha'):
+            model_for_loss.criterion.alpha = torch.tensor(class_weights[1] / class_weights[0]).to(device)
     
     # 옵티마이저 및 스케줄러
     optimizer = AdamW(model.parameters(), lr=config.learning_rate, weight_decay=0.01)
