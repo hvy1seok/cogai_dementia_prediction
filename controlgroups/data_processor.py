@@ -100,9 +100,13 @@ class ControlGroupDataset(Dataset):
                         # SigLIP과 동일: .npy 파일이 아니면 제외 (실시간 처리 방지)
                         raise ValueError(f"SigLIP 방식: .npy 파일만 지원 (실시간 오디오 처리 제외): {audio_path}")
                     
-                    # 이미지를 ViT용 텐서로 변환
-                    pixel_values = self.processor(images=image, return_tensors="pt")['pixel_values'][0]
-                    result['pixel_values'] = pixel_values
+                    # SigLIP2 프로세서 출력 전체 수용 (pixel_values, pixel_attention_mask, spatial_shapes 등)
+                    proc_out = self.processor(images=image, return_tensors="pt")
+                    for k, v in proc_out.items():
+                        if hasattr(v, '__getitem__'):
+                            result[k] = v[0]
+                        else:
+                            result[k] = v
                 else:
                     # SigLIP 방식: 이미 필터링되어 이 경우는 발생하지 않아야 함
                     raise ValueError(f"오디오 파일 없음 (필터링 오류): {audio_path}")

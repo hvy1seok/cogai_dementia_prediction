@@ -66,11 +66,17 @@ def train_epoch(model: nn.Module, train_loader: DataLoader, optimizer: optim.Opt
         
         # 입력 준비
         pixel_values = batch['pixel_values'].to(config.device)
+        pixel_attention_mask = batch.get('pixel_attention_mask')
+        spatial_shapes = batch.get('spatial_shapes')
+        if isinstance(pixel_attention_mask, torch.Tensor):
+            pixel_attention_mask = pixel_attention_mask.to(config.device)
+        if isinstance(spatial_shapes, torch.Tensor):
+            spatial_shapes = spatial_shapes.to(config.device)
         labels = batch['label'].to(config.device)
         languages = batch['language']
         
         # 순전파
-        logits = model(pixel_values)
+        logits = model(pixel_values, pixel_attention_mask, spatial_shapes)
         
         # DataParallel 사용 시 module 속성 접근
         if hasattr(model, 'module'):
@@ -135,11 +141,17 @@ def validate_epoch(model: nn.Module, val_loader: DataLoader, config: AudioOnlyCo
         for batch in tqdm(val_loader, desc="검증"):
             # 입력 준비
             pixel_values = batch['pixel_values'].to(config.device)
+            pixel_attention_mask = batch.get('pixel_attention_mask')
+            spatial_shapes = batch.get('spatial_shapes')
+            if isinstance(pixel_attention_mask, torch.Tensor):
+                pixel_attention_mask = pixel_attention_mask.to(config.device)
+            if isinstance(spatial_shapes, torch.Tensor):
+                spatial_shapes = spatial_shapes.to(config.device)
             labels = batch['label'].to(config.device)
             languages = batch['language']
             
             # 순전파
-            logits = model(pixel_values)
+            logits = model(pixel_values, pixel_attention_mask, spatial_shapes)
             
             # DataParallel 사용 시 module 속성 접근
             if hasattr(model, 'module'):

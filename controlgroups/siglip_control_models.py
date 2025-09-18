@@ -84,12 +84,23 @@ class SigLIPAudioOnlyModel(nn.Module):
                 self.criterion = nn.CrossEntropyLoss()
                 print("📊 Cross Entropy Loss 사용")
     
-    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+    def forward(self, pixel_values: torch.Tensor,
+                pixel_attention_mask: Optional[torch.Tensor] = None,
+                spatial_shapes: Optional[torch.Tensor] = None) -> torch.Tensor:
         """순전파 - 이미지만 처리"""
         # SigLIP 이미지 인코더만 사용
         with torch.no_grad():
             # SigLIP의 이미지 인코더 통과
-            outputs = self.siglip_model.get_image_features(pixel_values=pixel_values)
+            # SigLIP2는 spatial_shapes/pixel_attention_mask를 사용할 수 있음
+            try:
+                outputs = self.siglip_model.get_image_features(
+                    pixel_values=pixel_values,
+                    spatial_shapes=spatial_shapes,
+                    pixel_attention_mask=pixel_attention_mask
+                )
+            except TypeError:
+                # SigLIP v1 호환 폴백
+                outputs = self.siglip_model.get_image_features(pixel_values=pixel_values)
         
         # 분류기 통과
         logits = self.classifier(outputs)
@@ -251,11 +262,20 @@ class SigLIPConcatModel(nn.Module):
                 print("📊 Cross Entropy Loss 사용")
     
     def forward(self, pixel_values: torch.Tensor, input_ids: torch.Tensor, 
-                attention_mask: torch.Tensor) -> torch.Tensor:
+                attention_mask: torch.Tensor,
+                pixel_attention_mask: Optional[torch.Tensor] = None,
+                spatial_shapes: Optional[torch.Tensor] = None) -> torch.Tensor:
         """순전파 - 이미지+텍스트 분리 처리 후 연결"""
         # SigLIP 이미지 인코더
         with torch.no_grad():
-            image_features = self.siglip_model.get_image_features(pixel_values=pixel_values)
+            try:
+                image_features = self.siglip_model.get_image_features(
+                    pixel_values=pixel_values,
+                    spatial_shapes=spatial_shapes,
+                    pixel_attention_mask=pixel_attention_mask
+                )
+            except TypeError:
+                image_features = self.siglip_model.get_image_features(pixel_values=pixel_values)
         
         # SigLIP 텍스트 인코더
         with torch.no_grad():
