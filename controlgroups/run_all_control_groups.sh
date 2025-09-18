@@ -11,7 +11,7 @@ if [ $# -eq 0 ]; then
     echo "대조군 모델 목록:"
     echo "  1: Audio-only (ViT-Spec) - 오디오만 사용"
     echo "  2: Text-only (Gemma Encoder) - 텍스트만 사용"
-    echo "  3: Concat (ViT + XLM-R) - Late Fusion"
+    echo "  3: Concat (ViT + Gemma) - Late Fusion"
     echo "  all: 모든 대조군 순차 실행"
     exit 1
 fi
@@ -34,7 +34,7 @@ case $MODEL_NUM in
         bash run_text_only_en_cn.sh
         ;;
     3)
-        echo "🔗 Concat (ViT + XLM-R) Late Fusion 모델 훈련 시작..."
+        echo "🔗 Concat (ViT + Gemma) Late Fusion 모델 훈련 시작..."
         echo "========================================"
         bash run_concat_en_cn.sh
         ;;
@@ -66,7 +66,7 @@ case $MODEL_NUM in
         
         # 3. Concat 모델
         echo "========================================"
-        echo "🔗 3/3: Concat (ViT + XLM-R) Late Fusion 모델 훈련..."
+        echo "🔗 3/3: Concat (ViT + Gemma) Late Fusion 모델 훈련..."
         echo "========================================"
         bash run_concat_en_cn.sh
         if [ $? -ne 0 ]; then
@@ -81,7 +81,7 @@ case $MODEL_NUM in
         echo "📊 훈련 완료된 대조군 모델들:"
         echo "   🎵 Audio-only (ViT-Spec): 스펙트로그램만으로 치매 진단"
         echo "   📝 Text-only (Gemma): 전사 텍스트만으로 치매 진단"
-        echo "   🔗 Concat Late Fusion: 오디오+텍스트 Late Fusion"
+        echo "   🔗 Concat Late Fusion: ViT+Gemma Late Fusion"
         echo ""
         echo "🎯 대조군 실험의 목적:"
         echo "   ✅ SigLIP2의 성능 우위성 검증"
@@ -118,10 +118,10 @@ echo "   • 전사 텍스트만 사용하는 순수 언어 모델"
 echo "   • Gemma (256K vocab)로 다국어 텍스트 이해"
 echo "   • 언어학적 패턴과 의미 정보 기반 진단"
 echo ""
-echo "🔗 Concat (ViT + XLM-R) Late Fusion:"
+echo "🔗 Concat (ViT + Gemma) Late Fusion:"
 echo "   • 오디오와 텍스트를 후반부에서 융합"
 echo "   • 각 모달리티가 독립적으로 특징 학습"
-echo "   • 단순하지만 효과적인 멀티모달 접근"
+echo "   • ViT + Gemma의 강력한 멀티모달 접근"
 echo ""
 echo "🎯 이 대조군들은 SigLIP2 모델의 성능을 평가하는"
 echo "   최소·충분(Must) 베이스라인으로 사용됩니다."

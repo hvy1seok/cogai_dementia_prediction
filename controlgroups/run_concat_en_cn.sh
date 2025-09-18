@@ -11,14 +11,14 @@ OUTPUT_DIR="../modules/outputs/controlgroups/concat_en_cn"
 LANGUAGES="English Mandarin"
 
 # 훈련 설정
-BATCH_SIZE=64
+BATCH_SIZE=16
 LEARNING_RATE=2e-5
 NUM_EPOCHS=100
 EARLY_STOPPING_PATIENCE=10
 
 # 모델 설정
 AUDIO_ENCODER="google/vit-base-patch16-224"
-TEXT_ENCODER="xlm-roberta-base"
+TEXT_ENCODER="google/gemma-2b"
 FUSION_METHOD="concat"
 
 # 손실 함수 설정
@@ -30,7 +30,7 @@ FOCAL_GAMMA=2.0
 mkdir -p "$OUTPUT_DIR"
 
 echo ""
-echo "🔗 Concat (ViT + XLM-R) Late Fusion 대조군 모델 설정:"
+echo "🔗 Concat (ViT + Gemma) Late Fusion 대조군 모델 설정:"
 echo "  모델 유형: Multimodal Late Fusion (오디오 + 텍스트)"
 echo "  언어: $LANGUAGES"
 echo "  오디오 인코더: $AUDIO_ENCODER"
@@ -55,7 +55,7 @@ echo "  📈 언어 편향 방지를 위한 균형잡힌 평가"
 echo ""
 echo "🔗 Concat Late Fusion 모델의 특징:"
 echo "  ✅ ViT로 스펙트로그램 특징 추출"
-echo "  ✅ XLM-R로 다국어 텍스트 이해"
+echo "  ✅ Gemma (256K vocab)로 다국어 텍스트 이해"
 echo "  ✅ Late Fusion: 두 모달리티 임베딩 연결"
 echo "  ✅ 2층 FFN으로 융합된 특징 분류"
 echo "  ✅ Focal Loss로 클래스 불균형 해결"
@@ -68,9 +68,9 @@ echo "  ✨ 영어-중국어 멀티모달 패턴 학습"
 echo ""
 echo "🔧 모델 구조:"
 echo "  📸 오디오: 스펙트로그램 → ViT → [CLS] 토큰 (768차원)"
-echo "  📝 텍스트: 전사 → XLM-R → [CLS] 토큰 (768차원)"
-echo "  🔗 Fusion: Concat(오디오, 텍스트) → 1536차원"
-echo "  🧠 분류기: 1536 → 1024 → 512 → 2 (2층 FFN)"
+echo "  📝 텍스트: 전사 → Gemma → [CLS] 토큰 (2048차원)"
+echo "  🔗 Fusion: Concat(오디오, 텍스트) → 2816차원"
+echo "  🧠 분류기: 2816 → 1024 → 512 → 2 (2층 FFN)"
 echo ""
 
 # Python 명령어 확인
@@ -87,7 +87,7 @@ fi
 echo "Python 명령어: $PYTHON_CMD"
 echo ""
 
-echo "🚀 Concat (ViT + XLM-R) Late Fusion 대조군 모델 훈련 시작..."
+echo "🚀 Concat (ViT + Gemma) Late Fusion 대조군 모델 훈련 시작..."
 echo "🔗 멀티모달 Late Fusion 치매 진단 모델 학습!"
 echo "================================"
 
@@ -121,13 +121,13 @@ $PYTHON_CMD train_concat.py \
 # 결과 확인
 if [ $? -eq 0 ]; then
     echo ""
-    echo "✅ Concat (ViT + XLM-R) Late Fusion 대조군 모델 훈련 완료!"
+    echo "✅ Concat (ViT + Gemma) Late Fusion 대조군 모델 훈련 완료!"
     echo "완료 시간: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "모델 저장 위치: $OUTPUT_DIR"
     echo ""
     echo "🔗 Concat Late Fusion 모델 핵심 성과:"
     echo "   ✅ ViT로 스펙트로그램 특징 추출"
-    echo "   ✅ XLM-R로 다국어 텍스트 이해"
+    echo "   ✅ Gemma (256K vocab)로 다국어 텍스트 이해"
     echo "   ✅ Late Fusion으로 모달리티 융합"
     echo "   ✅ 2층 FFN으로 융합된 특징 분류"
     echo "   ✅ Focal Loss로 클래스 불균형 해결"
@@ -146,6 +146,6 @@ if [ $? -eq 0 ]; then
     echo "   ✨ 안정적이고 예측 가능한 성능"
 else
     echo ""
-    echo "❌ Concat (ViT + XLM-R) Late Fusion 대조군 모델 훈련 실패"
+    echo "❌ Concat (ViT + Gemma) Late Fusion 대조군 모델 훈련 실패"
     exit 1
 fi
