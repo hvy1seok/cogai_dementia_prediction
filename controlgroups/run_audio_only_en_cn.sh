@@ -11,7 +11,7 @@ OUTPUT_DIR="../modules/outputs/controlgroups/audio_only_en_cn"
 LANGUAGES="English Mandarin"
 
 # 훈련 설정
-BATCH_SIZE=24
+BATCH_SIZE=16
 LEARNING_RATE=2e-5
 NUM_EPOCHS=100
 EARLY_STOPPING_PATIENCE=15
