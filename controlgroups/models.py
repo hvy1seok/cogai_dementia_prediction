@@ -190,6 +190,12 @@ class TextOnlyModel(nn.Module):
         self.text_encoder = AutoModel.from_pretrained(config.text_encoder)
         self.tokenizer = AutoTokenizer.from_pretrained(config.text_encoder)
         
+        # Gemma 2048 -> 768 projection (SigLIP과 동일한 차원으로 축소)
+        if "gemma" in config.text_encoder.lower():
+            self.text_projection = nn.Linear(2048, config.text_feature_dim)
+        else:
+            self.text_projection = None
+        
         # 분류기
         layers = []
         input_dim = config.text_feature_dim
@@ -233,6 +239,10 @@ class TextOnlyModel(nn.Module):
             # 평균 풀링
             text_features = text_outputs.last_hidden_state.mean(dim=1)
         
+        # Gemma의 경우 2048 -> 768로 projection
+        if self.text_projection is not None:
+            text_features = self.text_projection(text_features)
+        
         # 분류
         logits = self.classifier(text_features)
         
@@ -263,6 +273,12 @@ class ConcatModel(nn.Module):
         # 텍스트 인코더 (XLM-R 또는 Gemma)
         self.text_encoder = AutoModel.from_pretrained(config.text_encoder)
         self.tokenizer = AutoTokenizer.from_pretrained(config.text_encoder)
+        
+        # Gemma 2048 -> 768 projection (SigLIP과 동일한 차원으로 축소)
+        if "gemma" in config.text_encoder.lower():
+            self.text_projection = nn.Linear(2048, config.text_feature_dim)
+        else:
+            self.text_projection = None
         
         # Late Fusion: 2층 FFN
         layers = []
@@ -312,6 +328,10 @@ class ConcatModel(nn.Module):
             text_features = text_outputs.last_hidden_state[:, 0]  # [CLS] token
         else:
             text_features = text_outputs.last_hidden_state.mean(dim=1)  # 평균 풀링
+        
+        # Gemma의 경우 2048 -> 768로 projection
+        if self.text_projection is not None:
+            text_features = self.text_projection(text_features)
         
         # Late Fusion: Concatenation
         if self.config.fusion_method == "concat":

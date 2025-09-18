@@ -77,7 +77,7 @@ class TextOnlyConfig(ControlGroupConfig):
     
     # 텍스트 전용 설정
     text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지
-    text_feature_dim: int = 2048  # Gemma-2b의 실제 출력 차원
+    text_feature_dim: int = 768  # SigLIP과 동일한 차원으로 제한
     use_cls_token: bool = True
     
     # 분류기 설정
@@ -100,12 +100,12 @@ class ConcatConfig(ControlGroupConfig):
     
     # 텍스트 인코더 설정
     text_encoder: str = "google/gemma-2b"  # Gemma-2b 유지
-    text_feature_dim: int = 2048  # Gemma-2b의 실제 출력 차원
+    text_feature_dim: int = 768  # SigLIP과 동일한 차원으로 제한
     use_cls_token: bool = True
     
     # Late Fusion 설정
     fusion_method: str = "concat"  # "concat", "add", "attention"
-    fused_feature_dim: int = 2816  # audio_dim(768) + text_dim(2048)
+    fused_feature_dim: int = 1536  # audio_dim(768) + text_dim(768)
     
     # 2층 FFN 설정
     ffn_hidden_dims: List[int] = None
@@ -114,5 +114,5 @@ class ConcatConfig(ControlGroupConfig):
         super().__post_init__()
         if self.ffn_hidden_dims is None:
             self.ffn_hidden_dims = [1024, 512]  # 2층 FFN
-        # Gemma-2b 사용 시 차원 업데이트
-        self.fused_feature_dim = self.audio_feature_dim + self.text_feature_dim  # 768 + 2048 = 2816
+        # SigLIP과 동일한 차원 사용
+        self.fused_feature_dim = self.audio_feature_dim + self.text_feature_dim  # 768 + 768 = 1536
