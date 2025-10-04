@@ -21,7 +21,7 @@ torch.cuda.manual_seed_all(seed_val)
 torch.backends.cudnn.deterministic = True
 
 nEpochs = 20
-pittPath = '../Pitt/voicedata/'
+pittPath = '../../voicedata/'
 batchSize = 8
 cnn = 'densenet'
 modelName = 'audio_' + cnn + str(nEpochs)

@@ -17,7 +17,7 @@ torch.cuda.manual_seed_all(seed_val)
 torch.backends.cudnn.deterministic = True
 
 nEpochs = 20
-data_root = '../training_dset/'  # training_dset 기준
+data_root = '../../training_dset/'  # training_dset 기준
 batchSize = 16
 maxSeqLen = 64  # SigLIP 호환 고려, 빠른 대조군용
 textModel = 1
