@@ -12,11 +12,11 @@ import torch.nn as nn
 import wandb
 import torchmetrics
 from torchmetrics.functional import auroc, precision, recall
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, random_split, Subset, ConcatDataset
 from torchvision import models
 from transformers import get_linear_schedule_with_warmup
 
@@ -39,6 +39,7 @@ class AudioDataset(Dataset):
         self.audio_paths = []
         self.labels = []
         self.classes = classes  # (negative, positive)
+        self.lang_id = 0 if language == "English" else (1 if language == "Mandarin" else -1)
         
         logger = logging.getLogger(__name__)
         logger.info(f"프로젝트 루트 경로: {project_root}")
@@ -90,7 +91,7 @@ class AudioDataset(Dataset):
     def __getitem__(self, idx):
         audio_specs = np.load(str(self.audio_paths[idx]))
         audio_specs = torch.FloatTensor(audio_specs)
-        return audio_specs, self.labels[idx]
+        return audio_specs, self.labels[idx], self.lang_id
 
 
 class AudioModel(pl.LightningModule):
@@ -99,6 +100,9 @@ class AudioModel(pl.LightningModule):
         self.save_hyperparameters()
         self.cfg = cfg
         self.num_classes = getattr(cfg.model, "num_classes", 2)
+        self._val_probs = []
+        self._val_labels = []
+        self._val_langs = []
         
         # CNN 백본 선택
         if cfg.model.name == "densenet":
@@ -138,7 +142,7 @@ class AudioModel(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, _ = batch
         
         logits = self(x)
         loss = self.criterion(logits, y)
@@ -152,7 +156,7 @@ class AudioModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, langs = batch
         
         logits = self(x)
         loss = self.criterion(logits, y)
@@ -163,6 +167,10 @@ class AudioModel(pl.LightningModule):
         # 확률 점수 (이진일 때 클래스 1의 확률)
         if self.num_classes == 2:
             probs = torch.softmax(logits, dim=1)[:, 1]
+            # 누적 저장 (에포크 종료 시 언어별 메트릭 계산)
+            self._val_probs.append(probs.detach().cpu())
+            self._val_labels.append(y.detach().cpu())
+            self._val_langs.append(langs.detach().cpu())
             try:
                 auc = auroc(probs, y, task="binary")
             except Exception:
@@ -178,6 +186,42 @@ class AudioModel(pl.LightningModule):
         self.log("val/f1", f1, on_epoch=True)
         
         return loss
+
+    def on_validation_epoch_start(self):
+        self._val_probs = []
+        self._val_labels = []
+        self._val_langs = []
+
+    def on_validation_epoch_end(self):
+        # 언어별 메트릭 계산 및 로깅 (English=0, Mandarin=1)
+        if not self._val_probs:
+            return
+        import numpy as np
+        probs = torch.cat(self._val_probs).numpy()
+        labels = torch.cat(self._val_labels).numpy()
+        langs = torch.cat(self._val_langs).numpy()
+
+        for lang_id, key in [(0, "en"), (1, "cn")]:
+            idxs = np.where(langs == lang_id)[0]
+            if idxs.size == 0:
+                continue
+            y_true = labels[idxs]
+            y_prob = probs[idxs]
+            y_pred = (y_prob >= 0.5).astype(int)
+            try:
+                auc = roc_auc_score(y_true, y_prob)
+            except Exception:
+                auc = 0.0
+            acc = accuracy_score(y_true, y_pred)
+            f1 = f1_score(y_true, y_pred, average="macro")
+            prec = precision_score(y_true, y_pred, zero_division=0)
+            rec = recall_score(y_true, y_pred, zero_division=0)
+            # 로깅
+            self.log(f"val/{key}/auc", float(auc), on_epoch=True, prog_bar=False)
+            self.log(f"val/{key}/acc", float(acc), on_epoch=True, prog_bar=False)
+            self.log(f"val/{key}/macro_f1", float(f1), on_epoch=True, prog_bar=False)
+            self.log(f"val/{key}/precision", float(prec), on_epoch=True, prog_bar=False)
+            self.log(f"val/{key}/recall", float(rec), on_epoch=True, prog_bar=False)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
@@ -209,20 +253,33 @@ class AudioDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         if stage == "fit" or stage is None:
-            self.dataset = AudioDataset(
-                self.cfg.paths.data_dir,
-                self.cfg.language,
-                classes=self.classes
-            )
-            
-            # Train/Val 분할
-            train_size = int(len(self.dataset) * self.cfg.data.train_ratio)
-            val_size = len(self.dataset) - train_size
-            
-            self.train_dataset, self.val_dataset = random_split(
-                self.dataset, 
-                [train_size, val_size]
-            )
+            # 두 언어를 함께 학습하되, 각 언어 내에서 8:2 분할 후 합치기
+            datasets = {}
+            for lang in ["English", "Mandarin"]:
+                ds = AudioDataset(
+                    self.cfg.paths.data_dir,
+                    lang,
+                    classes=self.classes
+                )
+                datasets[lang] = ds
+
+            # 언어별 인덱스
+            eng_indices = list(range(len(datasets["English"])))
+            man_indices = list(range(len(datasets["Mandarin"])))
+
+            eng_subset = Subset(datasets["English"], eng_indices)
+            man_subset = Subset(datasets["Mandarin"], man_indices)
+
+            eng_train_len = int(0.8 * len(eng_subset))
+            man_train_len = int(0.8 * len(man_subset))
+            eng_val_len = len(eng_subset) - eng_train_len
+            man_val_len = len(man_subset) - man_train_len
+
+            eng_train, eng_val = random_split(eng_subset, [eng_train_len, eng_val_len])
+            man_train, man_val = random_split(man_subset, [man_train_len, man_val_len])
+
+            self.train_dataset = ConcatDataset([eng_train, man_train])
+            self.val_dataset = ConcatDataset([eng_val, man_val])
 
     def train_dataloader(self):
         return DataLoader(
@@ -233,6 +290,15 @@ class AudioDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.cfg.data.batch_size,
+            shuffle=False,
+            num_workers=self.cfg.data.num_workers
+        )
+
+    # 테스트로 동일 세트를 사용 (요청: val 제거, train/test 두 단계)
+    def test_dataloader(self):
         return DataLoader(
             self.val_dataset,
             batch_size=self.cfg.data.batch_size,
@@ -280,8 +346,9 @@ def main(cfg: DictConfig):
         logger=wandb_logger
     )
     
-    # 학습 시작
+    # 학습 및 테스트 (val 세트 = test로 사용)
     trainer.fit(model, datamodule)
+    trainer.test(model, datamodule=datamodule)
 
 
 if __name__ == "__main__":
