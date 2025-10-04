@@ -11,6 +11,8 @@ from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precisio
 import wandb
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from pathlib import Path
+import re
+from sklearn.model_selection import train_test_split
 import os
 
 
@@ -39,6 +41,7 @@ def readIdx():
     audioPaths = []
     labels = []
     langs = []
+    stems = []
 
     # EN & CN, HC/AD 구조만 사용 (대조군)
     pairs = [
@@ -68,17 +71,34 @@ def readIdx():
             audioPaths.append(str(npy_path))
             labels.append(lab)
             langs.append(lang)
+            stems.append(stem)
 
-    return utts, audioPaths, labels, langs
+    return utts, audioPaths, labels, langs, stems
+
+def extract_patient_id(file_stem: str) -> str:
+    parts = re.split(r"[_\-]", file_stem)
+    if len(parts) == 0:
+        return file_stem
+    # 우선 숫자가 포함된 첫 파트를 우선 사용
+    for p in parts:
+        if any(ch.isdigit() for ch in p):
+            return p
+    # 아니면 앞의 두 파트 결합에 숫자가 있으면 사용
+    if len(parts) >= 2:
+        combined = f"{parts[0]}_{parts[1]}"
+        if any(ch.isdigit() for ch in combined):
+            return combined
+    return parts[0]
 
 
 class Dataset:
-    def __init__(self, text, attentions, audioPaths, labels, langs):
+    def __init__(self, text, attentions, audioPaths, labels, langs, patient_ids):
         self.text = text
         self.attentions = attentions
         self.audioPaths = audioPaths
         self.labels = labels
         self.langs = langs
+        self.patient_ids = patient_ids
 
     def __len__(self):
         return len(self.text)
@@ -110,7 +130,7 @@ def collate_fn(batch, padVal, device):
 
 
 def getDataloaders(device, tokenizer):
-    utterances, audioPaths, labels, langs = readIdx()
+    utterances, audioPaths, labels, langs, stems = readIdx()
 
     tokenized_inputs = []
     attention_masks = []
@@ -126,25 +146,52 @@ def getDataloaders(device, tokenizer):
         tokenized_inputs.append(token['input_ids'])
         attention_masks.append(token['attention_mask'])
 
-    dataset = Dataset(tokenized_inputs, attention_masks, audioPaths, labels, langs)
+    patient_ids = [extract_patient_id(s) for s in stems]
+    dataset = Dataset(tokenized_inputs, attention_masks, audioPaths, labels, langs, patient_ids)
 
-    # 언어별 8:2 분할 후 합치기
-    eng_indices = [i for i, lg in enumerate(dataset.langs) if lg == "English"]
-    man_indices = [i for i, lg in enumerate(dataset.langs) if lg == "Mandarin"]
+    # 언어별 환자 단위 8:2 분할 후 합치기 (SigLIP-SAM 로직 참고)
+    train_indices = []
+    test_indices = []
+    for lang in ["English", "Mandarin"]:
+        lang_idxs = [i for i, lg in enumerate(dataset.langs) if lg == lang]
+        if not lang_idxs:
+            continue
+        # 환자별 그룹
+        pid_to_indices = {}
+        for i in lang_idxs:
+            pid = dataset.patient_ids[i]
+            pid_to_indices.setdefault(pid, []).append(i)
+        pids = list(pid_to_indices.keys())
+        # 환자 라벨(대표 라벨) 구성
+        pid_labels = []
+        for pid in pids:
+            lbls = [dataset.labels[i] for i in pid_to_indices[pid]]
+            # 다수결 또는 첫 라벨
+            lab = 1 if sum(lbls) > (len(lbls)/2) else 0
+            pid_labels.append(lab)
+        # Stratify 가능 여부 체크
+        try:
+            p_train, p_test = train_test_split(
+                pids,
+                test_size=0.2,
+                stratify=pid_labels if len(set(pid_labels)) > 1 else None,
+                random_state=42
+            )
+        except Exception:
+            # 실패 시 무작위 분할
+            p_train, p_test = train_test_split(pids, test_size=0.2, random_state=42)
+        # 최소 1 환자 보장
+        if len(p_test) == 0 and len(p_train) > 1:
+            p_test = [p_train[-1]]
+            p_train = p_train[:-1]
+        # 인덱스 수집
+        for pid in p_train:
+            train_indices.extend(pid_to_indices[pid])
+        for pid in p_test:
+            test_indices.extend(pid_to_indices[pid])
 
-    eng_subset = Subset(dataset, eng_indices)
-    man_subset = Subset(dataset, man_indices)
-
-    eng_train_len = int(0.8 * len(eng_subset))
-    man_train_len = int(0.8 * len(man_subset))
-    eng_val_len = len(eng_subset) - eng_train_len
-    man_val_len = len(man_subset) - man_train_len
-
-    eng_train, eng_val = torch.utils.data.random_split(eng_subset, [eng_train_len, eng_val_len])
-    man_train, man_val = torch.utils.data.random_split(man_subset, [man_train_len, man_val_len])
-
-    trainDataset = ConcatDataset([eng_train, man_train])
-    testDataset = ConcatDataset([eng_val, man_val])
+    trainDataset = Subset(dataset, train_indices)
+    testDataset = Subset(dataset, test_indices)
 
     collate_fn_ = partial(collate_fn, device=device, padVal=0)
     trainIterator = DataLoader(trainDataset, batch_size=batchSize, shuffle=True, collate_fn=collate_fn_)

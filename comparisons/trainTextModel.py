@@ -7,6 +7,8 @@ from transformers import BertTokenizer, BertModel, get_linear_schedule_with_warm
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import os
 from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.model_selection import train_test_split
+import re
 import wandb
 
 
@@ -32,6 +34,7 @@ def readIdx():
     utts = []
     labels = []
     langs = []
+    stems = []
 
     pairs = [
         ("English", "HC", 0),
@@ -52,7 +55,21 @@ def readIdx():
             utts.append(utt)
             labels.append(lab)
             langs.append(lang)
-    return utts, labels, langs
+            stems.append(os.path.splitext(fname)[0])
+    return utts, labels, langs, stems
+
+def extract_pid(stem: str) -> str:
+    parts = re.split(r"[_\-]", stem)
+    if len(parts) == 0:
+        return stem
+    for p in parts:
+        if any(ch.isdigit() for ch in p):
+            return p
+    if len(parts) >= 2:
+        combined = f"{parts[0]}_{parts[1]}"
+        if any(ch.isdigit() for ch in combined):
+            return combined
+    return parts[0]
 
 
 class Dataset:
@@ -89,7 +106,7 @@ def collate_fn(batch, padVal, device):
 
 
 def getDataloaders(device, tokenizer):
-    utterances, labels, langs = readIdx()
+    utterances, labels, langs, stems = readIdx()
 
     tokenized_inputs = []
     attention_masks = []
@@ -105,25 +122,45 @@ def getDataloaders(device, tokenizer):
         tokenized_inputs.append(token['input_ids'])
         attention_masks.append(token['attention_mask'])
 
+    patient_ids = [extract_pid(s) for s in stems]
     dataset = Dataset(tokenized_inputs, attention_masks, labels, langs)
 
-    # 언어별 8:2 분할 후 합치기
-    eng_indices = [i for i, lg in enumerate(dataset.langs) if lg == "English"]
-    man_indices = [i for i, lg in enumerate(dataset.langs) if lg == "Mandarin"]
+    # 언어별 환자 단위 분할 8:2
+    train_indices = []
+    test_indices = []
+    for lang in ["English", "Mandarin"]:
+        lang_idxs = [i for i, lg in enumerate(dataset.langs) if lg == lang]
+        if not lang_idxs:
+            continue
+        pid_to_indices = {}
+        for i in lang_idxs:
+            pid = patient_ids[i]
+            pid_to_indices.setdefault(pid, []).append(i)
+        pids = list(pid_to_indices.keys())
+        pid_labels = []
+        for pid in pids:
+            lbls = [dataset.labels[i] for i in pid_to_indices[pid]]
+            lab = 1 if sum(lbls) > (len(lbls)/2) else 0
+            pid_labels.append(lab)
+        try:
+            p_train, p_test = train_test_split(
+                pids,
+                test_size=0.2,
+                stratify=pid_labels if len(set(pid_labels)) > 1 else None,
+                random_state=42
+            )
+        except Exception:
+            p_train, p_test = train_test_split(pids, test_size=0.2, random_state=42)
+        if len(p_test) == 0 and len(p_train) > 1:
+            p_test = [p_train[-1]]
+            p_train = p_train[:-1]
+        for pid in p_train:
+            train_indices.extend(pid_to_indices[pid])
+        for pid in p_test:
+            test_indices.extend(pid_to_indices[pid])
 
-    eng_subset = Subset(dataset, eng_indices)
-    man_subset = Subset(dataset, man_indices)
-
-    eng_train_len = int(0.8 * len(eng_subset))
-    man_train_len = int(0.8 * len(man_subset))
-    eng_val_len = len(eng_subset) - eng_train_len
-    man_val_len = len(man_subset) - man_train_len
-
-    eng_train, eng_val = torch.utils.data.random_split(eng_subset, [eng_train_len, eng_val_len])
-    man_train, man_val = torch.utils.data.random_split(man_subset, [man_train_len, man_val_len])
-
-    trainDataset = ConcatDataset([eng_train, man_train])
-    testDataset = ConcatDataset([eng_val, man_val])
+    trainDataset = Subset(dataset, train_indices)
+    testDataset = Subset(dataset, test_indices)
 
     collate_fn_ = partial(collate_fn, device=device, padVal=0)
     trainIterator = DataLoader(trainDataset, batch_size=batchSize, shuffle=True, collate_fn=collate_fn_)
