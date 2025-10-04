@@ -16,7 +16,7 @@ torch.manual_seed(seed_val)
 torch.cuda.manual_seed_all(seed_val)
 torch.backends.cudnn.deterministic = True
 
-nEpochs = 20
+nEpochs = 100
 data_root = '../../training_dset/'  # training_dset 기준
 batchSize = 16
 maxSeqLen = 64  # SigLIP 호환 고려, 빠른 대조군용
@@ -159,6 +159,9 @@ class text(nn.Module):
 
 def train(model, trainIterator, testIterator, optimizer, scheduler, lossfn):
 
+    best_avg_auc = -1.0
+    os.makedirs('modelos', exist_ok=True)
+
     for epoch in range(nEpochs):
         start = time.time()
         epoch_loss = 0
@@ -259,6 +262,8 @@ def train(model, trainIterator, testIterator, optimizer, scheduler, lossfn):
         def lang_mask(lang):
             return [j for j, lg in enumerate(val_langs) if lg == lang]
 
+        en_auc = None
+        cn_auc = None
         for lg, key in [("English", "en"), ("Mandarin", "cn")]:
             idxs = lang_mask(lg)
             if idxs:
@@ -274,6 +279,12 @@ def train(model, trainIterator, testIterator, optimizer, scheduler, lossfn):
                 prec_l = precision_score(y_true_l, y_pred_l, zero_division=0)
                 rec_l = recall_score(y_true_l, y_pred_l, zero_division=0)
                 print(f"[Test {lg}] Acc: {acc_l:.4f}, F1: {f1_l:.4f}, AUC: {auc_l:.4f}, P: {prec_l:.4f}, R: {rec_l:.4f}")
+                if key == 'en':
+                    en_auc = auc_l
+                elif key == 'cn':
+                    cn_auc = auc_l
+            else:
+                print(f"[Test {lg}] 샘플이 없습니다.")
 
         print('Validation confusion_matrix: ', conf_matrix)
 
@@ -317,6 +328,18 @@ def train(model, trainIterator, testIterator, optimizer, scheduler, lossfn):
                 log_lang[f'test/{key}/recall'] = rec_l
         if log_lang:
             wandb.log(log_lang)
+
+        # 평균 AUC 기반 베스트 모델 저장
+        auc_list = [v for v in [en_auc, cn_auc] if v is not None]
+        if auc_list:
+            avg_auc = sum(auc_list) / len(auc_list)
+            print(f"[Test Avg AUC (EN/CN)] {avg_auc:.4f}")
+            wandb.log({'test/avg_lang_auc': avg_auc})
+            if avg_auc > best_avg_auc:
+                best_avg_auc = avg_auc
+                best_path = f"modelos/{modelName}_best.pt"
+                torch.save(model.state_dict(), best_path)
+                print(f"✅ Best model updated (avg AUC={best_avg_auc:.4f}) → {best_path}")
 
 if __name__ == "__main__":
 

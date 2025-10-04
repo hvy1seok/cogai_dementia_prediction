@@ -20,7 +20,7 @@ torch.manual_seed(seed_val)
 torch.cuda.manual_seed_all(seed_val)
 torch.backends.cudnn.deterministic = True
 
-nEpochs = 20
+nEpochs = 100
 pittPath = '../../voicedata/'
 batchSize = 8
 cnn = 'densenet'
