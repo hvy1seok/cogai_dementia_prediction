@@ -59,11 +59,13 @@ def readIdx():
             print(f"⚠️ Missing lang/class dir: {txt_dir} or {wav_dir}")
             continue
 
-        # 파일명 기준 매칭 (.txt ↔ .npy 동일 stem)
-        txt_files = list(txt_dir.glob("*.txt"))
-        for txt_path in txt_files:
-            stem = txt_path.stem
-            npy_path = wav_dir / f"{stem}.npy"
+        # 하위폴더 포함 재귀 탐색: 텍스트 상대경로를 기준으로 동일 구조의 .npy 매칭
+        for txt_path in txt_dir.rglob("*.txt"):
+            try:
+                rel_path = txt_path.relative_to(txt_dir)
+            except Exception:
+                rel_path = txt_path.name
+            npy_path = (wav_dir / rel_path).with_suffix('.npy')
             if not npy_path.exists():
                 continue
             utt = readFile(txt_path)
@@ -71,7 +73,7 @@ def readIdx():
             audioPaths.append(str(npy_path))
             labels.append(lab)
             langs.append(lang)
-            stems.append(stem)
+            stems.append(txt_path.stem)
 
     return utts, audioPaths, labels, langs, stems
 

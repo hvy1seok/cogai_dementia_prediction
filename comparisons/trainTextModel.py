@@ -48,14 +48,16 @@ def readIdx():
         if not os.path.isdir(txt_dir):
             print(f"⚠️ Missing dir: {txt_dir}")
             continue
-        for fname in os.listdir(txt_dir):
-            if not fname.endswith('.txt'):
-                continue
-            utt = read_txt(os.path.join(txt_dir, fname))
-            utts.append(utt)
-            labels.append(lab)
-            langs.append(lang)
-            stems.append(os.path.splitext(fname)[0])
+        for root, _, files in os.walk(txt_dir):
+            for fname in files:
+                if not fname.endswith('.txt'):
+                    continue
+                full_txt = os.path.join(root, fname)
+                utt = read_txt(full_txt)
+                utts.append(utt)
+                labels.append(lab)
+                langs.append(lang)
+                stems.append(os.path.splitext(fname)[0])
     return utts, labels, langs, stems
 
 def extract_pid(stem: str) -> str:
