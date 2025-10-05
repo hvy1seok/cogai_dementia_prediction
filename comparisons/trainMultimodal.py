@@ -25,7 +25,7 @@ torch.backends.cudnn.deterministic = True
 nEpochs = 100
 data_root = '../../training_dset/'  # training_dset 기준
 batchSize = 8
-maxSeqLen = 64  # SigLIP 호환을 고려한 짧은 길이 권장
+maxSeqLen = 256  # 텍스트 문맥 보존을 위해 확장
 textModel = 1
 modelName = 'Multimodal'+str(textModel)+str(nEpochs)
 

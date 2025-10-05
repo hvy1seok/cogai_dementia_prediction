@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader, Subset, ConcatDataset
 from functools import partial
 import time
 import torch.nn as nn
-from transformers import BertTokenizer, BertModel, get_linear_schedule_with_warmup
+from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import os
 from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
@@ -21,7 +21,7 @@ torch.backends.cudnn.deterministic = True
 nEpochs = 100
 data_root = '../../training_dset/'  # training_dset 기준
 batchSize = 16
-maxSeqLen = 64  # SigLIP 호환 고려, 빠른 대조군용
+maxSeqLen = 256  # 문맥 보존을 위해 확장
 textModel = 1
 modelName = 'Texto'+str(textModel)+str(nEpochs)
 
@@ -173,7 +173,7 @@ def getDataloaders(device, tokenizer):
 class text(nn.Module):
     def __init__(self, dModel = 1024, dropout = 0.2):
       super(text, self).__init__()
-      self.textModel = BertModel.from_pretrained('bert-base-uncased')
+      self.textModel = AutoModel.from_pretrained('xlm-roberta-base')
       self.dModel = dModel
       if textModel == 2:
         self.lstm = nn.LSTM(768, dModel, 1, batch_first = True, bidirectional = True)
@@ -386,7 +386,7 @@ if __name__ == "__main__":
                entity=os.environ.get('WANDB_ENTITY', None),
                name='Text_EN_CN_HC_AD')
 
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case = True)
+    tokenizer = AutoTokenizer.from_pretrained('xlm-roberta-base')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     trainIterator, testIterator = getDataloaders(device, tokenizer)
 
